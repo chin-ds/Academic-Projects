@@ -1,0 +1,190 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: inline
+---
+Import the CSV file and assign it to a variable
+```{r}
+fhr_data <- read.csv("Factor-Hair-Revised.csv", header = TRUE) # Read the csv data into a variable
+project_data <- data.frame(fhr_data[,-1]) # Convert variable to a data frame and remove the first column ID
+project_data # Display the contents of the dataframe
+str(fhr_data) # Returns the structure of the data stored in the variable
+str(project_data) # Returns the structure of the data stored in the data frame
+```
+Define variables for each column in the dataset
+```{r}
+pro_qua <- project_data$ProdQual
+eco <- project_data$Ecom
+tec_sup <- project_data$TechSup
+com_res <- project_data$CompRes
+adv <- project_data$Advertising
+pro_lin <- project_data$ProdLine
+sal_ima <- project_data$SalesFImage
+com_pri <- project_data$ComPricing
+war_cla <- project_data$WartyClaim
+ord_bil <- project_data$OrdBilling
+del_spe <- project_data$DelSpeed
+sat <- project_data$Satisfaction
+# Create a dataframe from the varaibles created above
+project_df <- data.frame(pro_qua,eco, tec_sup,com_res,adv,pro_lin,sal_ima,com_pri,war_cla,ord_bil,del_spe,sat)
+project_df # Display contents of the dataframe
+```
+
+Descriptive statistics of the dataset
+```{r}
+write.csv(summary(project_df), "Desc_stat.csv")
+```
+Descriptive statistics plotting
+```{r}
+library(ggplot2)
+hist(sat, main = "Histrogram of customer satisfaction", xlab = "Satisfaction", ylab = "Count", ylim = c(0,20), xlim = c(4,11), col = "Turquoise", labels = TRUE)
+boxplot(sat, horizontal = TRUE, ylim = c(4,11), xlab = "Satisfaction", ylab = "Count", col = "Beige")
+boxplot(project_df, cex.axis = 1, las = 2, col = "Lavender", main = "Box plots of all variables")
+```
+Checking the co-relation between variables of the dataset
+```{r}
+cor_data <- cor(project_df) # Storing the co-relation matrix in a new variable
+write.csv(cor_data,"cor_data.csv")
+library(corrplot) # Import library for mapping the co-relation plot
+corrplot(cor_data)
+```
+Check the significance of each independence variable with the dependant variable with simple linear regression model
+```{r}
+# Define MLR model without performing factor analysis
+model1 <- lm(sat~.,project_df) # Define our MLR model with satisfaction as dependant variable
+summary(model1) # Returns the summary of the model
+```
+Checking if multi-colinearity exists
+```{r}
+library(mctest)
+library(ppcor)
+# Import the required libraries for data manipulation
+library(psych)
+library(car) 
+# One of the ways to check if multi-colinearity exists is with help of VIF (Variance Inflation Factor)
+vif(model1) # Model1 variable consists of our MLR model data
+# No multi-colinearity exists if the values lie between 0-4
+# Moderate multi-colinearity exists if the values lie between 4-8
+# Heavy multi-colinearity exists if the values lie between 8-10
+cortest.bartlett(cor_data, 100) # Perform Barlett co-relation test to check for dimensionality reduction possibility
+KMO(cor_data) # Perform KMO test to check the suitability of data for dimensionality reduction
+omcdiag(project_df,sat)
+imcdiag(project_df,sat)
+pcor(project_data, method = "pearson")
+```
+Performing principal component analysis - Determine the Eigen values and Eigen vectors
+```{r}
+library(nFactors) # Importing the required library for eigen values and factor analysis
+eigenv <- eigen(cor_data)
+eigenva <- eigenv$values
+eigenve <- eigenv$vectors
+eigenva
+```
+Determine the number of factors - Scree plot
+```{r}
+factors <- c(1,2,3,4,5,6,7,8,9,10,11,12) 
+Scree <- data.frame(factors, eigenva)
+plot(Scree, main = "Scree plot - Number of Factors", col="Magenta", ylim=c(0,4))
+lines(Scree, col="Orange")
+abline(h=1, col="Purple", lty = 3)
+# As observed from the Scree plot, we validate that number of factors to be considered as 4
+# We confirm our validation with Kaizer normalization rule - 4 eigen values > 1 hence 4 factors. 
+```
+Build our principal component analysis matrix to determine if rotation is required or not
+```{r}
+library(psych)
+unrotate <- principal(project_df, nfactors = 4, rotate = "none")
+print(unrotate, digits = 4)
+rotate <- principal(project_df, nfactors = 4, rotate = "varimax")
+print(rotate, digits = 4)
+```
+Plot the graphs for rotated and unrotated profiles
+```{r}
+rotatedprofile <- plot(rotate, row.names(rotate$loadings), cex=1.0)
+unrotatedprofile <- plot(unrotate, row.names(unrotate$loadings), cex=1.0)
+```
+PCA - Factor score anlysis
+```{r}
+factor.scores(project_df, f=rotate$loadings, method = "Harman")
+```
+Fetching new factors for Multiple Linear Regression after PC Analysis
+```{r}
+project_df_new <- cbind(project_df[,12], rotate$scores) # Binding columns of factor scores with satisfaction
+write.csv(project_df_new, "new_data.csv") # Saving the result to a csv file
+# Setting the column names i.e naming the factors
+colnames(project_df_new) <- c("Customer Satisfaction","Customer Support", "Marketing", "Product Service", "Value for Money")
+class(project_df_new) # Returns the class of the object
+project_df_new <- as.data.frame(project_df_new) # converts the matrix to a dataframe 
+attach(project_df_new) # attaches the variables to the dataframe
+dim(project_df_new) # Returns the dimensions of the dataframe
+```
+Checking the co-relation between dependent variable and new factors
+```{r}
+corrplot(cor(project_df_new)) # Returns co-relation matrix for the new data frame
+```
+Defining new MLR model
+```{r}
+model2 <- lm(`Customer Satisfaction`~., project_df_new) # Defining the multiple regression model with new dataframe
+summary(model2) # Returns the summary of the dataframe
+confint(model2) # Returns the 95% confidence interval of independent variables in the linear model
+```
+Plotting for MLR
+```{r}
+# Plots the relation between the independent and the dependent variables. 
+library(ggplot2)
+qplot(`Customer Support` + `Value for Money` + `Product Service` + Marketing,`Customer Satisfaction`, data = project_df_new, main = "Relationship between Factors and customer satisfaction") + stat_smooth(method = "lm", col="purple")
+```
+Factor Analysis
+```{r}
+library(nFactors)
+av <- parallel(subject = nrow(project_df), var = ncol(project_df), rep = 100, cent = 0.05) # define a factor analysis object
+ns <- nScree(x = eigenva, aparallel = av$eigen$qevpea) # store the scree plot values to an object
+plot(ns) # plot the scree plot
+```
+
+```{r}
+library(psych)
+par <- fa.parallel(project_df, fm = 'minres', fa = 'fa') # Store the parallel analysis data in an object
+```
+Using factanal function from stats package - Factor loadings - unrotaed
+```{r}
+library(stats)
+
+n.factors <- 4 # Define the number of factors 
+fit <- factanal(project_df, n.factors, scores = c("regression"), rotation = "none") # Define an unrotated profile
+print(fit, digits = 2, sort = TRUE)
+write.csv(fit$loadings[,1:4], "FA_unroated.csv") # Save the result in a new csv file
+load <- fit$loadings[,1:4] # print all the loadings for four factors
+plot(load, type = "n")
+text(load, labels = names(project_df), cex = 0.7)
+abline(h=0, v=0)
+```
+Factor loading analysis - rotated
+```{r}
+library(GPArotation)
+library(stats)
+
+n.factors <- 4 # Define the number of factors 
+fitr <- factanal(project_df, n.factors, rotation = "oblimin") # Oblique factor rotation
+print(fitr, digits = 2, sort = TRUE)
+write.csv(fitr$loadings[,1:4], "FA_rotated.csv") # Save the result in a new csv file
+loadr <- fitr$loadings[,1:4] # print all the loadings for four factors
+plot(loadr, type = "n")
+text(loadr, labels = names(project_df), cex = 0.7)
+abline(h=0, v=0)
+```
+FA visualisations
+```{r}
+fourfactors <- fa(r=project_df, nfactors = 4, rotate = "none", fm = "minres") # factoring method as minimum residual
+print(fourfactors)
+fa.diagram(fourfactors) # Plot the FA diagram with 4 factors 
+```
+Interpreting the values
+```{r}
+fourfactors$communality # Returns the communality for each of the variables
+fourfactors$e.values # Returns the eigen values for each of the varaibles - unrotated profile
+fourfactors$values # Returns the eigen values for each of the variables - rotated profile
+fourfactors$loadings[,1:4]
+```
+

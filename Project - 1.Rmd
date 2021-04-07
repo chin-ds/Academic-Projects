@@ -1,0 +1,526 @@
+---
+title: "EdWisor Project - 1 Cab Fare Prediction"
+output: html_notebook
+---
+
+Problem Statement - After running a successful pilot phase, a cab campany wants to employ a model which predicts the cab fares for various trips within the city.
+Dataset - Cab Fare Training Data
+Variables - 7 (6 independent & 1 dependent)
+Dep. Variable - Fare Amount (Continuous)
+Observations - 16067
+
+Setting the working directory & loading the dataset
+```{r}
+setwd("~/OneDrive/EdWisor Assignments/Project - 1") # Setting the working directory
+getwd() # Fetching the current working directory
+
+train_cab <- read.csv("train_cab.csv", header = TRUE) # Importing train dataset
+str(train_cab) # Checking the structure of train dataset
+summary(train_cab) # Checking the summary of train dataset
+
+apply(train_cab, 2, function(x) length(table(x))) # Checking unique counts for each variable
+```
+
+Phase 1 - Data Preprocessing
+
+Approach - In order to predict the cab fares, the two most important parameters are distance, time of day & no. of passengers. As these variables are not included in the dataset as direct entities, we need to extract the meaningful parameters out of the variables.
+```{r}
+#install.packages("hms")
+#install.packages("chron")
+#install.packages("geosphere")
+library(hms)
+library(chron)
+library(tidyr)
+library(dplyr)
+library(geosphere)
+
+# Extract the important parameters from the variables
+
+date <- as.Date(train_cab$pickup_datetime)
+year <- years(as.Date(train_cab$pickup_datetime)) # Extracting year from datetime object (Reqd)
+month <- months(as.Date(train_cab$pickup_datetime)) # Extracting month from datetime object 
+day <- days(as.Date(train_cab$pickup_datetime)) # Extracting day from datetime object (Reqd)
+month_num <- match(month, month.name) # Converting the month name to month number (Reqd)
+#day_of_week <- weekdays(as.Date(split$date)) # Extracting day of the week from datetime object
+dow_num <- format(date,"%u") # Converting the day of the week name to number (Reqd)
+
+split <- separate(train_cab, pickup_datetime, c("date", "time"), sep = " ", remove = F) # Splitting the datatime column to fetch time object
+
+hour <- hours(as.times(split$time)) # Extracting hours from time object (Reqd)
+minute <- minutes(as.times(split$time)) # Extracting minutes from time object (Reqd)
+second <- seconds(as.times(split$time)) # Extracting seconds from time object
+
+# Drop the datetime variable and add separated columns to our dataframe
+
+train_cab <- subset(train_cab, select = -c(pickup_datetime)) #Subsetting our dataset to remove the datetime variable
+
+# Add the separated columns to our dataframe
+
+train_cab$pickup_year <- year
+train_cab$pickup_month <- month_num
+train_cab$pickup_day <- day
+train_cab$pickup_dow <- dow_num
+train_cab$pickup_hour <- hour
+```
+
+Missing value check
+```{r}
+#install.packages("DataExplorer", repos = "https://cloud.r-project.org")
+#install.packages("rlang")
+library(DataExplorer)
+
+apply(train_cab, 2,  function(x) {sum(is.na(x))}) # Checking the missing values from each column
+plot_missing(train_cab) # Plotting the missing values chart for each column
+
+# Out of ~16K observations, around 60 of them are missing i.e. 0.37% of total data is missing (less than 1%). So it is safe to remove the observations which are missing data.
+
+train_cab <- drop_na(train_cab) # Dropping all rows with missing data
+
+apply(train_cab, 2,  function(x) {sum(is.na(x))}) # Checking again if any missing values exist
+
+plot_missing(train_cab) # Replotting the chart to check any missing values
+
+str(train_cab)
+```
+Removing the outliers - Longitude & Latitude
+```{r}
+train_cab <- train_cab[!(train_cab$pickup_longitude < -180 | train_cab$pickup_longitude > 180),] # Capping out of range values for longitude
+train_cab <- train_cab[!(train_cab$dropoff_longitude < -180 | train_cab$dropoff_longitude > 180),] # Capping out of range values for longitude
+train_cab <- train_cab[!(train_cab$pickup_latitude < -90 | train_cab$pickup_latitude > 90),] # Capping out of range values for latitude
+train_cab <- train_cab[!(train_cab$dropoff_latitude < -90 | train_cab$dropoff_latitude > 90),] # Capping out of range values for latitude
+```
+
+Converting latitudes & longitudes to distance
+```{r}
+library(geosphere)
+library(dplyr)
+lon1 <- train_cab['pickup_longitude']
+lat1 <- train_cab['pickup_latitude']
+lon2 <- train_cab['dropoff_longitude']
+lat2 <- train_cab['dropoff_latitude']
+
+dist_fun <- function(lon1, lat1, lon2, lat2) { # Creating a function to calculate distance between 2 points given by latitude & longitude
+  rad <- pi/180
+  a1 <- lat1 * rad
+  a2 <- lon1 * rad
+  b1 <- lat2 * rad
+  b2 <- lon2 * rad
+  
+  dlon <- (b2 - a2)
+  dlat <- (b1 - a1)
+  a <- (sin(dlat/2))^2 + cos(a1) * cos(b1) * (sin(dlon/2))^2 # The Haversine Formula
+  c <- 2 * atan2(sqrt(a), sqrt(1 - a))
+  R <- 6378.145
+  d <- R * c
+  return(d)
+}
+
+# Iterating this function over the entire dataset
+
+for(i in 1:nrow(train_cab)) 
+  {
+  train_cab$distance[i] = dist_fun(train_cab$pickup_longitude[i], train_cab$pickup_latitude[i], train_cab$dropoff_longitude[i], train_cab$dropoff_latitude[i])
+}
+
+dist_fun(-73.844311, 40.721319, -73.84161, 40.712278) # Testing the function with 1st observation
+
+# We'll drop the pickup & dropoff latitude & longitude columns from our dataset as we have already calculated the distance
+
+train_cab <- subset(train_cab, select = -c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude)) # Removing columns
+```
+Datatype Conversion - Train data
+```{r}
+train_cab$fare_amount <- as.numeric(train_cab$fare_amount)
+train_cab$pickup_year <- as.factor(train_cab$pickup_year)
+train_cab$pickup_month <- as.factor(train_cab$pickup_month)
+train_cab$pickup_day <- as.factor(train_cab$pickup_day)
+train_cab$pickup_dow <- as.factor(train_cab$pickup_dow)
+train_cab$pickup_hour <- as.factor(train_cab$pickup_hour)
+train_cab$passenger_count <- as.numeric(train_cab$passenger_count)
+train_cab$distance <- as.numeric(train_cab$distance)
+```
+Delete the induced NA's
+```{r}
+train_cab <- drop_na(train_cab) # Removing the NA's from the dataset
+```
+
+```{r}
+str(train_cab) # Checking the structure before cleaning
+```
+Phase 2 - Data Cleaning & Outlier treatment
+
+Approach - As we're dealing with a regression problem, it is important to get rid of potential outliers or erratic entries. Thus we'll manually set the cut-off thresholds & remove the outliers from columns wherever applicable.
+```{r}
+library(tidyr)
+
+# We'll remove the erratic observations from each column
+
+train_cab <- train_cab[!(train_cab$fare_amount<=0 | train_cab$fare_amount >=400),] # Setting threshold to be negative & zero amount fares
+
+# Maximum number of passengers a cab can accommodate along with the driver is 6 for a SUV.
+
+train_cab <- train_cab[!(train_cab$passenger_count<1),]
+train_cab <- train_cab[!(train_cab$passenger_count>6),]
+train_cab <- train_cab[!(train_cab$passenger_count==1.3),]
+
+# Fare is directly proportional to distance travelled, thus remove outlier distances from our dataset
+
+train_cab <- train_cab[!(train_cab$distance<=0),]
+train_cab <- train_cab[!(train_cab$distance>500),]
+```
+Data Cleaning - Test Data
+```{r}
+#install.packages("mlr")
+#install.packages("dummy")
+library(dummy)
+library(mlr)
+
+# We'll import test data & convert it as per train
+
+test_cab <- read.csv("test.csv", header = T)
+str(test_cab) # Checking the structure of test dataset
+summary(test_cab) # Checking the summary of test dataset
+
+apply(test_cab, 2, function(x) length(table(x))) # Checking unique counts for each variable
+
+date1 <- as.Date(test_cab$pickup_datetime)
+year1 <- years(as.Date(test_cab$pickup_datetime)) # Extracting year from datetime object (Reqd)
+month1 <- months(as.Date(test_cab$pickup_datetime)) # Extracting month from datetime object 
+day1 <- days(as.Date(test_cab$pickup_datetime)) # Extracting day from datetime object (Reqd)
+month_num1 <- match(month1, month.name) # Converting the month name to month number (Reqd)
+day_of_week1 <- weekdays(as.Date(split1$date)) # Extracting day of the week from datetime object
+dow_num1 <- format(date1,"%u") # Converting the day of the week name to number (Reqd)
+
+split1 <- separate(test_cab, pickup_datetime, c("date", "time"), sep = " ", remove = F) # Splitting the datatime column to fetch time object
+
+hour1 <- hours(as.times(split1$time)) # Extracting hours from time object (Reqd)
+minute1 <- minutes(as.times(split1$time)) # Extracting minutes from time object (Reqd)
+second1 <- seconds(as.times(split1$time)) # Extracting seconds from time object
+
+# Drop the datetime variable and add separated columns to our dataframe
+
+test_cab <- subset(test_cab, select = -c(pickup_datetime)) #Subsetting our dataset to remove the datetime variable
+
+# Add the separated columns to our dataframe
+
+test_cab$pickup_year <- year1
+test_cab$pickup_month <- month_num1
+test_cab$pickup_day <- day1
+test_cab$pickup_dow <- dow_num1
+test_cab$pickup_hour <- hour1
+
+apply(test_cab, 2,  function(x) {sum(is.na(x))}) # Checking the missing values from each column
+```
+Data Preparation - Test Data
+```{r}
+# Iterating this function over the entire dataset
+
+for(i in 1:nrow(test_cab)) 
+  {
+  test_cab$distance[i] = dist_fun(test_cab$pickup_longitude[i], test_cab$pickup_latitude[i], test_cab$dropoff_longitude[i], test_cab$dropoff_latitude[i])
+}
+
+test_cab <- subset(test_cab, select = -c(pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude)) # Removing columns
+```
+Outlier Detection & Capping - Test
+```{r}
+str(test_cab) # Checking the structure of the test dataset before cleaning
+
+test_cab$pickup_month <- as.factor(test_cab$pickup_month) # Converting month to factor
+test_cab$pickup_dow <- as.factor(test_cab$pickup_dow) # Converting day of week to factor
+test_cab$pickup_hour <- as.factor(test_cab$pickup_hour) # Converting pickup hour to factor
+
+test_cab <- test_cab[!(test_cab$passenger_count<1),] # Capping values lower than 0
+test_cab <- test_cab[!(test_cab$passenger_count>6),] # Capping values greater than 6
+
+# Fare is directly proportional to distance travelled, thus remove outlier distances from our dataset
+
+test_cab <- test_cab[!(test_cab$distance<=0),] # Setting threshold to distance travelled lower than 1
+test_cab <- test_cab[!(test_cab$distance>=500),] # Setting threshold to distance travelled more than 500
+
+test_cab <- test_cab[,c(7,1,2,3,4,5,6)] # Reordering columns for easier analysis
+```
+Phase 3 - EDA & Visualisation
+
+Approach - We'll be converting the variables to appropriate data types & sort them for exploration. We'll be plotting various univariate & bivariate plots for understanding how independent variables behave with the dependent.
+```{r}
+# We'll prepare our data for visualisations by converting each variable to its appropriate datatype
+
+str(train_cab) # Checking the structure of the existing dataset
+
+# Fare - Numerical (Appropriate for its observations)
+# Passengers - Numerical (Conversion needed)
+# Pickup Year - Numerical (Conversion needed)
+# Pickup Month - Numerical (Conversion needed)
+# Pickup Day - Numerical (Conversion needed)
+# Pickup DOW - Numerical (Conversion needed)
+# Pickup Hour - Numerical (Conversion needed)
+# Distance - Numerical (Appropriate for its observations)
+
+train_cab$passenger_count <- as.factor(train_cab$passenger_count) # Converting to factor
+
+# Next we'll identify our dependent & independent variables
+
+# Fare - Dependent Variable (Continuous)
+# Others - Independent Variables (Continuous)
+
+attach(train_cab)
+train_cab <- train_cab[,c(8,2,3,4,5,6,7,1)] # Reordering columns for easier analysis
+
+train_cont <- as.data.frame(train_cab[,(1)]) # Dataframe with only continuous variables - Excluding our dependent variable
+colnames(train_cont) <- ("distance")
+train_cat <- train_cab[,c(2:7)] # Dataframe with only categorical variables
+```
+Uni-variate Visualisations
+```{r}
+library(ggplot2)
+
+# We'll plot univariate categorical variables
+
+ggplot(train_cat, aes(x = passenger_count, fill=passenger_count)) + geom_bar(color = "azure4", bins = 100) + labs(title="Count of no. of passengers by cab seating capacity", x = "Seating Capacity") + scale_fill_brewer(palette="Greens") + theme_minimal() # Passenger count
+
+ggplot(train_cat, aes(x = pickup_year, fill=pickup_year)) + geom_bar(color = "azure4", bins = 100) + labs(title="Count of no. of passengers by year", x = "Year") + scale_fill_brewer(palette="Greens") + theme_minimal() # Pickup Year
+
+ggplot(train_cat, aes(x = pickup_month, fill=pickup_month)) + geom_bar(color = "azure4", bins = 100) + labs(title="Count of no. of passengers by month", x = "Months") + theme_minimal() # Pickup Month
+
+ggplot(train_cat, aes(x = pickup_day, fill=pickup_day)) + geom_bar(color = "azure4", bins = 100) + labs(title="Count of no. of passengers by day", x = "Days") + theme_minimal() # Pickup Day
+
+ggplot(train_cat, aes(x = pickup_dow, fill=pickup_dow)) + geom_bar(color = "azure4", bins = 100) + labs(title="Count of no. of passengers by day of the week", x = "Day of the Week") + scale_fill_brewer(palette="Greens") + theme_minimal() # Day of the week
+
+ggplot(train_cat, aes(x = pickup_hour, fill=pickup_hour)) + geom_bar(color = "azure4", bins = 100) + theme_minimal() + labs(title="Count of no. of passengers by hour", x = "Hours") # Pickup Hour
+```
+
+```{r}
+# We'll plot univariate continuous variables
+
+ggplot(train_cont, aes(x = distance)) + geom_histogram(fill = "skyblue", color = "azure4", bins = 100) + labs(title="Distance travelled per cab ride", x = "Distance in Kms") + scale_fill_brewer(palette="Greens") + theme_minimal() # Passenger count
+
+ggplot(train_cont, aes(x = distance)) + geom_density(fill = "skyblue", color = "azure4", bw=12) + labs(title="Distance travelled per cab ride", x = "Distance in Kms") + scale_fill_brewer(palette="Greens") + theme_minimal() # Passenger count
+
+#bw.nrd0(train_cont$Distance) Selecting bandwidth for estimating kernel density (smoothness)
+```
+Bi-variate Visualisations
+```{r}
+
+# We'll plot bivariate visualisations to better understand relationship between two variables
+
+ggplot(train_cat, aes(x = pickup_hour, fill = passenger_count)) + geom_bar(position = position_dodge(preserve = "single")) + theme_minimal()
+
+ggplot(train_cat, aes(x = pickup_day, fill = passenger_count)) + geom_bar(position = position_dodge(preserve = "single")) + theme_minimal()
+
+ggplot(train_cat, aes(x = pickup_month, fill = passenger_count)) + geom_bar(position = position_dodge(preserve = "single")) + theme_minimal()
+
+ggplot(train_cab, aes(x = fare_amount, y = distance)) + geom_point(color="turquoise", size = 2, alpha=.8) +  labs(x = "Fare Amount",
+       y = "Distance Travelled", title = "Fare vs. Distance")+ geom_smooth(method = "lm", colour = "darkmagenta")
+
+#create_report(train_cab)
+```
+Correlations
+```{r}
+#install.packages("corrplot")
+#install.packages("PerformanceAnalytics")
+#install.packages("moments")
+library(corrplot)
+library(PerformanceAnalytics)
+library(moments)
+
+# Continuous Variables
+
+cor_mat <- cor(train_cab[,c(1,8)], method = c("pearson", "kendall", "spearman"), use = "complete.obs")
+corrplot(cor_mat, method = "number")
+chart.Correlation(train_cab[,c(1,8)], histogram=TRUE, pch=19)
+
+# Categorical Variables
+
+chisq.test(train_cat$passenger_count, train_cat$pickup_year, correct = FALSE)
+
+chisq.test(train_cat$passenger_count, train_cat$pickup_month, correct = FALSE)
+
+chisq.test(train_cat$passenger_count, train_cat$pickup_day, correct = FALSE)
+
+chisq.test(train_cat$passenger_count, train_cat$pickup_dow, correct = FALSE) 
+
+chisq.test(train_cat$passenger_count, train_cat$pickup_hour, correct = FALSE)
+
+# Skewness & Kurtosis
+
+skewness(train_cab[,c(1,8)]) # Checking the skewness of the data
+kurtosis(train_cab[,c(1,8)]) # Checking the kurtosis of the data
+```
+Phase 4 - Feature Selection & Modelling
+
+Approach - Until now, we have imported the dataset, checked initially for visual analysis, cleaned the data & also explored it further with univariate & bivariate plots. Now we'll select the variables which are important in our prediction of fare amount & build & enhance multiple ML models with those selected features.
+
+Temp - Section
+```{r}
+temp1 <- read.csv("train_cab.csv", header = TRUE)
+temp1 <- temp1[,-c(2,3,4,5,6,7)]
+temp1 <- as.data.frame(temp1)
+colnames(temp1) <- ("fare_amount")
+temp1$fare_amount <- as.numeric(temp1$fare_amount)
+temp1 <- temp1[!(temp1$fare_amount<=0 | temp1$fare_amount >=400),]
+temp1 <- drop_na(temp1)
+
+
+qqPlot(temp1$fare_amount)
+truehist(temp1$fare_amount) # Plotting the histogram to check the tails
+lines(density(temp1$fare_amount))
+
+qqPlot(train_cont$distance)
+truehist(train_cont$distance) # Plotting the histogram to check the tails
+lines(density(train_cont$distance))
+```
+Normality check
+```{r}
+#install.packages("igraph")
+#install.packages("MASS")
+library(igraph)
+library(car)
+library(MASS)
+
+
+# Feature selection - During our initial preparation, we did create individual columns from the derived information which was provided to us. Once we derived those columns we have removed the redundant columns, thus our dataset now only contains variables important to us.
+
+qqPlot(train_cab$fare_amount) # Checking the normality of the fare amount variable
+
+truehist(train_cab$fare_amount) # Plotting the histogram to check the tails
+lines(density(train_cab$fare_amount))
+
+dt=density(train_cab$fare_amount) 
+plot(dt,main="Distribution of Fare amount") # Plotting density plot for fare amount
+polygon(dt,col="orange",border="darkmagenta")
+
+dt1=density(train_cab$distance)
+plot(dt1,main="Distribution of Distance - Train") # Plotting density plot for distance
+polygon(dt1,col="orange",border="darkmagenta")
+
+dt2=density(test_cab$distance)
+plot(dt2,main="Distribution of Distance - Test") # Plotting density plot for distance
+polygon(dt2,col="orange",border="darkmagenta")
+
+# Applying log transformation.
+train_cab$fare_amount=log1p(train_cab$fare_amount) # Applying log transformation on fare amount - Train
+train_cab$distance=log1p(train_cab$distance) # Applying log transformation on distance - Train
+test_cab$distance=log1p(test_cab$distance) # Applying log transformation on distance - Test
+
+# Recheking if log transformation was sucsessful
+dt=density(train_cab$fare_amount)
+plot(dt,main="Distribution of Fare amount") # Plotting density plot for fare amount - after log transformation
+polygon(dt,col="orange",border="darkmagenta")
+
+dt1=density(train_cab$distance)
+plot(dt1,main="Distribution of Distance - Train") # Plotting density plot for distance - after log transformation
+polygon(dt1,col="orange",border="darkmagenta")
+
+dt2=density(test_cab$distance)
+plot(dt2,main="Distribution of Distance - Test") # Plotting density plot for distance - after log transformation
+polygon(dt2,col="orange",border="darkmagenta")
+
+#normalize(train_cab$distance) # Applying nomalization formula to eliminate the right tail.
+#normalize(train_cab$fare_amount) # Applying nomalization formula to eliminate the right tail.
+```
+Phase 5 - Modelling
+
+Data Modelling - Train Data
+```{r}
+library(caret)
+
+set.seed(400)
+train_split <- createDataPartition(y=train_cab$fare_amount, p = 0.75, list = F)
+train_data <- train_cab[train_split,]
+test_data <- train_cab[-train_split,]
+```
+Linear Regression
+```{r}
+#install.packages("rsq")
+#install.packages("DMwR")
+#install.packages("Metrics")
+library(rsq)
+library(DMwR)
+library(Metrics)
+
+MLR_1 <- lm(fare_amount~.,train_data) # Building a Multiple Linear Regression model with all independent variables
+summary(MLR_1) # Viewing the summary of the model
+
+pred_MLR1 <- predict(MLR_1, test_data) # Predicting the model with test data
+print(postResample(pred = pred_MLR1, obs = test_data$fare_amount)) # Printing the metrics with test data
+
+MSE_MLR1 <- mean((test_data$fare_amount - pred_MLR1) ^ 2) # Calculating the MSE for model 1
+print(MSE_MLR1)
+MAPE_MLR1 <- mape(test_data$fare_amount, pred_MLR1) # Calculating the MAPE for model 1
+print(MAPE_MLR1)
+
+MLR_2 <- train(fare_amount~distance, train_data, method = "lm") # Building a MLR model with only 1 independent variable
+summary(MLR_2$finalModel)$r.squared
+MLR_2$results
+```
+Random Forest
+```{r}
+library(randomForest)
+
+RF_1 <- randomForest(fare_amount~., train_data)
+pred_RF1 <- predict(RF_1, test_data)
+print(postResample(pred = pred_RF1, obs = test_data$fare_amount))
+
+MSE_RF1 <- mean((test_data$fare_amount - pred_RF1) ^ 2)
+print(MSE_RF1)
+
+MAPE_RF1 <- mape(test_data$fare_amount, pred_RF1)
+print(MAPE_RF1)
+```
+Regression Tree
+```{r}
+library(rpart)
+library(rpart.plot)
+library(rattle)
+
+RT_1 <- rpart(fare_amount~., data = train_data, method = "anova")
+RT_1$variable.importance
+
+fancyRpartPlot(RT_1)
+
+printcp(RT_1)
+
+# The best(least) xerror is 0.253 at xstd of 0.0085
+
+RT_1 <- prune(RT_1, cp = 0.014)
+
+pred_RT1 <- predict(RT_1, test_data)
+print(postResample(pred = pred_RT1, obs = test_data$fare_amount))
+
+MSE_RT1 <- mean((test_data$fare_amount - pred_RT1) ^ 2)
+print(MSE_RT1)
+
+MAPE_RT1 <- mape(test_data$fare_amount, pred_RT1)
+print(MAPE_RT1)
+
+```
+XG-Boost
+```{r}
+#install.packages("gbm")
+library(gbm)
+
+XGB_1 <- gbm(fare_amount~., data = train_data, distribution = "gaussian", n.trees = 400, interaction.depth = 1)
+
+pred_XGB1 <- predict(XGB_1, test_data)
+print(postResample(pred = pred_XGB1, obs = test_data$fare_amount))
+
+MSE_XGB1 <- mean((test_data$fare_amount - pred_XGB1) ^ 2)
+print(MSE_XGB1)
+
+MAPE_XGB1 <- mape(test_data$fare_amount, pred_XGB1)
+print(MAPE_XGB1)
+```
+Summary of all models
+```{r}
+
+df_MSE <- c(MSE_MLR1, MSE_RF1, MSE_RT1, MSE_XGB1)
+df_MAPE <- c(MAPE_MLR1, MAPE_RF1, MAPE_RT1, MAPE_XGB1)
+
+df_summary <- data.frame(df_MSE, df_MAPE)
+
+write.csv("Summary.csv")
+
+```
+
+

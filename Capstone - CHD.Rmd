@@ -1,0 +1,905 @@
+---
+title: "Capstone - Prediction the likelihood of CHD"
+output: html_notebook
+---
+Capstone project lifecycle:
+
+Part 1:
+1. Problem definition
+2. Hypothesis & assumptions
+
+Part 2:
+3. Data loading & exploration
+4. Data preparation & manipulation
+
+Part 3:
+5. Model building
+6. Model evaluation & interpretation
+
+```{r}
+# Load and visually inspect the dataset
+data = read.csv("Coronary_heart_risk_study.csv", header = TRUE)
+head(data) # View the first 6 rows of the dataset
+str(data) # View the structure of the dataset
+```
+Convert the data types of continous variables to categorical 
+```{r}
+# Conversion of data type is required as this is a classification problem and it is important to us that our variables are treated as classes with multiple levels as opposed to a range of integer or numeric values.
+data$male = as.factor(data$male)
+data$education = as.factor(data$education)
+data$currentSmoker = as.factor(data$currentSmoker)
+data$BPMeds = as.factor(data$BPMeds)
+data$prevalentStroke = as.factor(data$prevalentStroke)
+data$prevalentHyp = as.factor(data$prevalentHyp)
+data$diabetes = as.factor(data$diabetes)
+data$TenYearCHD = as.factor(data$TenYearCHD)
+```
+Data pre-processing - Missing values identification
+```{r}
+# Check for missing values
+sum(is.na(data)) # Check if the dataset has N/A values for a column
+sum(is.null(data)) # Check if the dataset has no values for a column
+sapply(data, function(x) sum(length(which(is.na(x))))) # Check the count of missing values for each column of the dataset
+sum(is.na(data))/nrow(data)*100 # Calculate the percentage of missing data w.r.t. the dataset
+```
+Split the dataframe in 3 parts
+```{r}
+data.cont = data[,c(2,5,10,11,12,13,14,15)] # Dataframe of only continous variables - for easier exploration
+data.cat = data[,c(1,3,4,6,7,8,9)] # Dataframe of only categorical variables - for easier exploration
+data.dep = data[,16] # Dataframe of dependent variable
+dim(data.cont) # Check the dimensions of the continous variable dataframe
+dim(data.cat) # Check the dimensions of the categorical variable dataframe
+typeof(data.dep) # Check the data type of the dependent variable dataframe
+data.dep <- as.data.frame(data.dep) # Convert the dependent varaible interger data type to dataframe
+```
+Identifying the type of missing data
+```{r}
+# MCAR - Missing completely at random
+# MAR - Missing at random
+# NMAR - Not missing at random
+
+# According to the visual inspection of data, it appears that edu, BPmeds and totchol are missing at random (MAR) where we can presume that the pieces of information are missing can be explained by the data. Now cigarettes per day is a piece of information which can be completely at the patient's disposal whether to answer or nor hence it is categorized under NMAR. The variables glucose, heart rate and BMI seem to be MCAR. All these variables ideally are measured in the hospital and there is no reason for them to be missing when other hospital measured records are present in the dataset. 
+```
+Missing value treatment - MICE
+```{r}
+library(mice) # Import MICE for missing value imputation
+library(VIM) # Import VIM for plotting the pattern recognition
+mice_plot <- aggr(data.cont, col=c('darkorange','cyan'), # PLotting the missing values chart along with the pattern
+                    numbers=TRUE, sortVars=TRUE,
+                    labels=names(data.cont), cex.axis=.7,
+                    gap=3, ylab=c("Missing data","Pattern"))
+# Now that we have identified the columns having missing values and the pattern of the missing values, we will now impute the missing values.
+# For continuous variables, we will use a Predictive Mean Matching (PMM) algorithm to impute missing values
+impute_cont <- mice(data.cont, m=5, method = 'pmm', maxit = 10, seed = 123)
+summary(impute_cont)
+train_cont <- complete(impute_cont, 2)
+# For categorical variables, we will use a Logistic Regression (LR) algorithm to impute missing values
+impute_cat <- mice(data.cat[,-2], m=5, method = 'logreg', maxit = 10, seed = 123) # Education is removed as it has 4 levels
+summary(impute_cat)
+train_cat <- complete(impute_cat, 2)
+impute_edu <- mice(data.cat[,c(1,2)], m=5, method = 'polyreg', maxit = 10, seed = 123) # Bayesian polytomous regression imputation
+summary(impute_edu)
+comp_edu <- complete(impute_edu, 2)
+comp_edu <- comp_edu[,-1]
+train_cat <- cbind(train_cat, comp_edu)
+train_cat <- data.frame(train_cat)
+train_dep <- data.frame(data.dep)
+```
+Checking again if the datasets have any missing values
+```{r}
+sapply(train_cont, function(x) sum(length(which(is.na(x))))) # Check the count of missing values for each column of the dataset
+sapply(train_cat, function(x) sum(length(which(is.na(x))))) # Check the count of missing values for each column of the dataset
+sapply(train_dep, function(x) sum(length(which(is.na(x))))) # Check the count of missing values for each column of the dataset
+sapply(train_cont, function(x) sum(length(which(is.null(x))))) # Check the count of null values for each column of the dataset
+sapply(train_cat, function(x) sum(length(which(is.null(x))))) # Check the count of null values for each column of the dataset
+sapply(train_dep, function(x) sum(length(which(is.null(x))))) # Check the count of null values for each column of the dataset
+
+summary(train_cont) # Summary of the dataset with imputed values
+summary(train_cat) # Summary of the dataset with imputed values - Imbalance data
+summary(train_dep) # Summary of the dataset with imputed values - Imbalance data
+```
+Initial exploratory data analysis
+```{r}
+# Analysis of continous variables - central tendencies
+summary(train_cat)
+summary(train_cont)
+```
+Distribution and spread of all continous variables
+```{r}
+
+# Age - Measures of central tendencies
+mean(train_cont$age)
+median(train_cont$age)
+sd(train_cont$age)
+# Age - Spread of the variable
+summary(train_cont$age)
+
+# Cigarettes per day - Measures of central tendencies (Exclusive of missing values)
+mean(train_cont$cigsPerDay, na.rm = TRUE)
+median(train_cont$cigsPerDay, na.rm = TRUE)
+sd(train_cont$cigsPerDay, na.rm = TRUE)
+# Cigarettes per day - Spread of the variable
+summary(train_cont$cigsPerDay, na.rm = TRUE)
+
+# Total cholesterol - Measures of central tendencies (Exclusive of missing values)
+mean(train_cont$totChol, na.rm = TRUE)
+median(train_cont$totChol, na.rm = TRUE)
+sd(train_cont$totChol, na.rm = TRUE)
+# Total cholesterol - Spread of the variable
+summary(train_cont$totChol, na.rm = TRUE)
+
+# Systolic blood pressure - Measures of central tendencies
+mean(train_cont$sysBP)
+median(train_cont$sysBP)
+sd(train_cont$sysBP)
+# Systolic blood pressure - Spread of the variable
+summary(train_cont$sysBP)
+
+# Diastolic blood pressure - Measures of central tendencies
+mean(train_cont$diaBP)
+median(train_cont$diaBP)
+sd(train_cont$diaBP)
+# Diastolic blood pressure - Spread of the variable
+summary(train_cont$diaBP)
+
+# Body mass index - Measures of central tendencies (Exclusive of missing values)
+mean(train_cont$BMI, na.rm = TRUE)
+median(train_cont$BMI, na.rm = TRUE)
+sd(train_cont$BMI, na.rm = TRUE)
+# Body mass index - Spread of the variable
+summary(train_cont$BMI, na.rm = TRUE)
+
+# Heart rate - Measures of central tendencies (Exclusive of missing values)
+mean(train_cont$heartRate, na.rm = TRUE)
+median(train_cont$heartRate, na.rm = TRUE)
+sd(train_cont$heartRate, na.rm = TRUE)
+# Heart rate - Spread of the variable
+summary(train_cont$heartRate, na.rm = TRUE)
+
+# Glucose - Measures of central tendencies (Exclusive of missing values)
+mean(train_cont$glucose, na.rm = TRUE)
+median(train_cont$glucose, na.rm = TRUE)
+sd(train_cont$glucose, na.rm = TRUE)
+# Glucose - Spread of the variable
+summary(train_cont$glucose, na.rm = TRUE)
+
+```
+Summary of categorical variables
+```{r}
+summary(train_cat)
+```
+Distribution of categories in categorical variables
+```{r}
+library(plyr)
+# Male - Distribution
+names(table(data.cat$male))[table(data.cat$male)==max(table(data.cat$male))] # Calculating the mode
+count(data.cat, 'male')
+count(data.cat, 'male')/nrow(data.cat)*100
+
+# Education - Distribution
+names(table(data.cat$education))[table(data.cat$education)==max(table(data.cat$education))] # Calculating the mode
+count(data.cat, 'education')
+count(data.cat, 'education')/nrow(data.cat)*100
+
+# Current smoker - Distribution
+names(table(data.cat$currentSmoker))[table(data.cat$currentSmoker)==max(table(data.cat$currentSmoker))] # Calculating the mode
+count(data.cat, 'currentSmoker')
+count(data.cat, 'currentSmoker')/nrow(data.cat)*100
+
+# BP medication - Distribution
+names(table(data.cat$BPMeds))[table(data.cat$BPMeds)==max(table(data.cat$BPMeds))] # Calculating the mode
+count(data.cat, 'BPMeds')
+count(data.cat, 'BPMeds')/nrow(data.cat)*100
+
+# Prevalent stroke - Distribution
+names(table(data.cat$prevalentStroke))[table(data.cat$prevalentStroke)==max(table(data.cat$prevalentStroke))] # Calculating the mode
+count(data.cat, 'prevalentStroke')
+count(data.cat, 'prevalentStroke')/nrow(data.cat)*100
+
+# Prevalent hypertension - Distribution
+names(table(data.cat$prevalentHyp))[table(data.cat$prevalentHyp)==max(table(data.cat$prevalentHyp))] # Calculating the mode
+count(data.cat, 'prevalentHyp')
+count(data.cat, 'prevalentHyp')/nrow(data.cat)*100
+
+# Diabetes - Distribution
+names(table(data.cat$diabetes))[table(data.cat$diabetes)==max(table(data.cat$diabetes))] # Calculating the mode
+count(data.cat, 'diabetes')
+count(data.cat, 'diabetes')/nrow(data.cat)*100
+
+# Ten year CHD - Distribution
+names(table(data.dep))[table(data.dep)==max(table(data.dep))] # Calculating the mode
+count(data.dep)
+count(data.dep)/nrow(data.cat)*100
+```
+Correlation between continuos variables
+```{r}
+library(PerformanceAnalytics)
+library(corrplot)
+library(corrgram)
+cor_mat = cor(data.cont, method = c("pearson", "kendall", "spearman"), use = "complete.obs")
+cor_mat
+corrplot(cor_mat, method = "number")
+chart.Correlation(data.cont, histogram=TRUE, pch=19)
+
+```
+Correlation between categorical variables
+```{r}
+chisq.test(data.cat$currentSmoker, data.cat$prevalentStroke, correct = FALSE)
+
+chisq.test(data.cat$currentSmoker, data.cat$prevalentHyp, correct = FALSE)
+
+chisq.test(data.cat$BPMeds, data.cat$prevalentStroke, correct = FALSE)
+
+chisq.test(data.cat$BPMeds, data.cat$diabetes, correct = FALSE)
+```
+Data Visualisations - Histograms
+```{r}
+# Univariate plots - continuous variables
+library(tidyverse)
+library(ggplot2)
+attach(train_cont)
+
+# Histogram for age
+ggplot(train_cont, aes(x = age)) +
+        geom_histogram(aes(fill = ..count..), binwidth = 1) +
+        scale_x_continuous(name = "Age of the patients", 
+                           breaks = seq(25, 75, 5),
+                           limits=c(25, 75)) +
+        scale_y_continuous(name = "Count",limits=c(0,220)) +
+        ggtitle("Frequency histogram of age of the patients")+
+        scale_fill_gradient("Count", low = "cyan", high = "darkorchid")+
+        geom_vline(xintercept = 60, size = 1, colour = "black", linetype = "dashed")
+
+# Histogram for cigarettes per day
+hist(train_cont$cigsPerDay, 
+     freq = T, breaks =30, 
+     xlim = c(0,80), ylim = c(0,2500), 
+     col = "darkorchid",
+     xlab = "No. of cigarettes per day of the patients",
+     ylab = "Count",
+     main = "Frequency histogram of no. of cigarettes per day of the patients")
+abline(v=mean(train_cont$cigsPerDay))
+
+# Histogram for total cholesterol
+ggplot(train_cont, aes(x = totChol)) +
+        geom_histogram(aes(fill = ..count..), binwidth = 2) +
+        scale_x_continuous(name = "Total cholesterol level of the patients", 
+                           breaks = seq(100, 700, 50),
+                           limits=c(100, 700)) +
+        scale_y_continuous(name = "Count",limits=c(0,100)) +
+        ggtitle("Frequency histogram of total cholesterol level of the patients")+
+        scale_fill_gradient("Count", low = "cyan", high = "darkorchid")+
+        geom_vline(xintercept = 240, size = 1, colour = "black", linetype = "dashed")
+
+# Histogram for systolic blood pressure
+ggplot(train_cont, aes(x = sysBP)) +
+        geom_histogram(aes(fill = ..count..), binwidth = 1) +
+        scale_x_continuous(name = "Systolic blood pressure of the patients", 
+                           breaks = seq(75, 300, 20),
+                           limits=c(75, 300)) +
+        scale_y_continuous(name = "Count",limits=c(0,100)) +
+        ggtitle("Frequency histogram of systolic blood pressure of the patients")+
+        scale_fill_gradient("Count", low = "cyan", high = "darkorchid")+
+        geom_vline(xintercept = 150, size = 1, colour = "black", linetype = "dashed")
+
+# Histogram for diastolic blood pressure
+ggplot(train_cont, aes(x = diaBP)) +
+        geom_histogram(aes(fill = ..count..), binwidth = 0.5) +
+        scale_x_continuous(name = "Diastolic blood pressure of the patients", 
+                           breaks = seq(45, 150, 10),
+                           limits=c(45, 150)) +
+        scale_y_continuous(name = "Count",limits=c(0,100)) +
+        ggtitle("Frequency histogram of diastolic blood pressure of the patients")+
+        scale_fill_gradient("Count", low = "cyan", high = "darkorchid")+
+        geom_vline(xintercept = 90, size = 1, colour = "black", linetype = "dashed")
+
+# Histogram for body mass index
+ggplot(train_cont, aes(x = BMI)) +
+        geom_histogram(aes(fill = ..count..), binwidth = 0.15) +
+        scale_x_continuous(name = "BMI of the patients", 
+                           breaks = seq(10, 60, 5),
+                           limits=c(10, 60)) +
+        scale_y_continuous(name = "Count",limits=c(0,100)) +
+        ggtitle("Frequency histogram of BMI of the patients")+
+        scale_fill_gradient("Count", low = "cyan", high = "darkorchid")+
+        geom_vline(xintercept = 30, size = 1, colour = "black", linetype = "dashed")
+
+# Histogram for heart rate
+ggplot(train_cont, aes(x = heartRate)) +
+        geom_histogram(aes(fill = ..count..), binwidth = 0.9) +
+        scale_x_continuous(name = "Heartrate of the patients", 
+                           breaks = seq(40, 150, 10),
+                           limits=c(40, 150)) +
+        scale_y_continuous(name = "Count",limits=c(0,100)) +
+        ggtitle("Frequency histogram of Heartrate of the patients")+
+        scale_fill_gradient("Count", low = "cyan", high = "darkorchid")+
+        geom_vline(xintercept = 100, size = 1, colour = "black", linetype = "dashed")
+
+hist(train_cont$heartRate, 
+     freq = T, breaks =25, 
+     xlim = c(40,160), ylim = c(0,1500), 
+     col = "darkorchid",
+     xlab = "Heartrate of the patients",
+     ylab = "Count",
+     main = "Frequency histogram of heartrate of the patients")
+abline(v=100)
+
+# Histogram for glucose
+ggplot(train_cont, aes(x = glucose)) +
+        geom_histogram(aes(fill = ..count..), binwidth = 0.6) +
+        scale_x_continuous(name = "Glucose level of the patients", 
+                           breaks = seq(40, 400, 50),
+                           limits=c(40, 400)) +
+        scale_y_continuous(name = "Count",limits=c(0,100)) +
+        ggtitle("Frequency histogram of glucose level of the patients")+
+        scale_fill_gradient("Count", low = "cyan", high = "darkorchid")+
+        geom_vline(xintercept = 140, size = 1, colour = "black", linetype = "dashed")
+
+hist(train_cont$glucose, 
+     freq = T, breaks =40, 
+     xlim = c(40,160), ylim = c(0,2000), 
+     col = "darkorchid",
+     xlab = "Glucose level of the patients",
+     ylab = "Count",
+     main = "Frequency histogram of glucose level of the patients")
+abline(v=100)
+```
+Data Visualisations - Histograms
+```{r}
+# Univariate plots - categorical variables
+names(train_cat)[7] <- "education"
+attach(train_cat)
+
+# Education bar plot w.r.t gender
+ggplot(train_cat, aes(factor(male),
+        fill = factor(education))) + geom_bar(position = "fill")
+
+# Current smoker bar plot w.r.t gender
+ggplot(train_cat, aes(factor(male),
+        fill = factor(currentSmoker))) + geom_bar(position = "fill")
+
+# BP medication bar plot w.r.t gender
+ggplot(train_cat, aes(factor(male),
+        fill = factor(BPMeds))) + geom_bar(position = "fill")
+
+# Prevalent Stroke bar plot w.r.t gender
+ggplot(train_cat, aes(factor(male),
+        fill = factor(prevalentStroke))) + geom_bar(position = "fill")
+
+# Prevalent Hypertension bar plot w.r.t. gender
+ggplot(train_cat, aes(factor(male),
+        fill = factor(prevalentHyp))) + geom_bar(position = "fill")
+
+# Diabetes bar plot w.r.t gender
+ggplot(train_cat, aes(factor(male),
+        fill = factor(diabetes))) + geom_bar(position = "fill")
+```
+Data Visualisation - Box plots for univariate analysis
+```{r}
+library(viridis)
+
+# Box plot for age
+ggplot(train_cont, aes(x="", y=age))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Age") +
+  xlab("Spread") + ylab("Age")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+
+# Box plot for cigarettes per day
+ggplot(train_cont, aes(x="", y=cigsPerDay))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Cigarettes Per Day") +
+  xlab("Spread") + ylab("No. of cigarettes")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+
+# Box plot for total cholesterol
+ggplot(train_cont, aes(x="", y=totChol))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Cholesterol levels") +
+  xlab("Spread") + ylab("Cholesterol level")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+
+# Box plot for systolic blood pressure
+ggplot(train_cont, aes(x="", y=sysBP))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Systolic Blood Pressure") +
+  xlab("Spread") + ylab("Systolic BP")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+
+# Box plot for diastolic blood pressure
+ggplot(train_cont, aes(x="", y=diaBP))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Diastolic Blood Pressure") +
+  xlab("Spread") + ylab("Diastolic BP")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+
+# Box plot for BMI
+ggplot(train_cont, aes(x="", y=BMI))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Body Mass Index") +
+  xlab("Spread") + ylab("BMI")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+
+# Box plot for heartrate
+ggplot(train_cont, aes(x="", y=heartRate))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Heartrate") +
+  xlab("Spread") + ylab("Heartrate")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+
+# Box plot for glucose
+ggplot(train_cont, aes(x="", y=glucose))+ geom_boxplot(fill = "#45B8AC", outlier.color = "cyan")+ 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()+
+  scale_color_viridis(discrete = T, option = "D", alpha = 0.6)+
+  scale_fill_viridis(discrete = TRUE) +
+  ggtitle("Box-plot of Glucose levels") +
+  xlab("Spread") + ylab("Glucose level")+ theme(
+    plot.title = element_text(size=14, face="plain"),
+    axis.title.x = element_text(size=14, face="plain"),
+    axis.title.y = element_text(size=14, face="plain"))
+    ```
+Data Visualisation - Box plots for multivariate analysis
+```{r}
+
+# Box plot for age w.r.t gender
+ggplot(train_cont, aes(male, age)) + geom_boxplot(outlier.color = "darkmagenta", outlier.alpha = 0.1) + 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.35) + coord_flip()
+
+# Box plot for cigarettes per day w.r.t gender
+ggplot(train_cont, aes(male, cigsPerDay)) + geom_boxplot(outlier.color = "darkmagenta", outlier.alpha = 0.1) + 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for cigarettes per day w.r.t education
+ggplot(train_cont, aes(education, cigsPerDay)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = education), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for cigarettes per day w.r.t BP meds
+ggplot(train_cont, aes(BPMeds, cigsPerDay)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = BPMeds), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for cigarettes per day w.r.t Prevalent hypertension
+ggplot(train_cont, aes(prevalentHyp, cigsPerDay)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = prevalentHyp), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for cigarettes per day w.r.t Prevalent stroke
+ggplot(train_cont, aes(prevalentStroke, cigsPerDay)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = prevalentStroke), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for cigarettes per day w.r.t Diabetes
+ggplot(train_cont, aes(diabetes, cigsPerDay)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = diabetes), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for total cholesterol w.r.t gender
+ggplot(train_cont, aes(male, totChol)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for total cholesterol w.r.t current smoker
+ggplot(train_cont, aes(currentSmoker, totChol)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = currentSmoker), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for total cholesterol w.r.t BP medication
+ggplot(train_cont, aes(BPMeds, totChol)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = BPMeds), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for total cholesterol w.r.t Prevalent stroke
+ggplot(train_cont, aes(prevalentStroke, totChol)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = prevalentStroke), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for total cholesterol w.r.t Diabetes
+ggplot(train_cont, aes(diabetes, totChol)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = diabetes), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for systolic BP w.r.t gender
+ggplot(train_cont, aes(male, sysBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for systolic BP w.r.t current smoker
+ggplot(train_cont, aes(currentSmoker, sysBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = currentSmoker), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for systolic BP w.r.t BP medication
+ggplot(train_cont, aes(BPMeds, sysBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = BPMeds), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for systolic BP w.r.t Prevalent stroke
+ggplot(train_cont, aes(prevalentStroke, sysBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = prevalentStroke), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for systolic BP w.r.t Diabetes
+ggplot(train_cont, aes(diabetes, sysBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = diabetes), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for diastolic BP w.r.t gender
+ggplot(train_cont, aes(male, diaBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for diastolic BP w.r.t current smoker
+ggplot(train_cont, aes(currentSmoker, diaBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = currentSmoker), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for diastolic BP w.r.t BP medication
+ggplot(train_cont, aes(BPMeds, diaBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = BPMeds), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for diastolic BP w.r.t Prevalent stroke
+ggplot(train_cont, aes(prevalentStroke, diaBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = prevalentStroke), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for diastolic BP w.r.t Diabetes
+ggplot(train_cont, aes(diabetes, diaBP)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = diabetes), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for BMI w.r.t gender
+ggplot(train_cont, aes(male, BMI)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for BMI w.r.t current smoker
+ggplot(train_cont, aes(currentSmoker, BMI)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = currentSmoker), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for BMI w.r.t BP medication
+ggplot(train_cont, aes(BPMeds, BMI)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = BPMeds), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for BMI w.r.t Prevalent stroke
+ggplot(train_cont, aes(prevalentStroke, BMI)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = prevalentStroke), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for BMI w.r.t Diabetes
+ggplot(train_cont, aes(diabetes, BMI)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = diabetes), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for heartrate w.r.t gender
+ggplot(train_cont, aes(male, heartRate)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = male), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for heartrate w.r.t current smoker
+ggplot(train_cont, aes(currentSmoker, heartRate)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = currentSmoker), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for heartrate w.r.t BP medication
+ggplot(train_cont, aes(BPMeds, heartRate)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = BPMeds), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for heartrate w.r.t Prevalent stroke
+ggplot(train_cont, aes(prevalentStroke, heartRate)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = prevalentStroke), width = 0.15, height = 0.25) + coord_flip()
+
+# Box plot for heartrate w.r.t Diabetes
+ggplot(train_cont, aes(diabetes, heartRate)) + geom_boxplot(outlier.color = "darkmagenta") + 
+  geom_jitter(aes(color = diabetes), width = 0.15, height = 0.25) + coord_flip()
+```
+Data visualisation - Categorical variables
+```{r}
+library(plotly)
+library(dplyr)
+attach(train_cat)
+
+# Education vs gender
+train_cat %>% count(education, male) %>%
+  plot_ly(x = ~education, y = ~n, color = ~male)
+
+# Gender
+plot_ly(train_cat, x = ~male) %>%
+  layout(width = 250, autosize=F, title = "Gender count", xaxis = list(title = "0-Female 1-Male"), yaxis = list(title = "Count")) %>%
+  add_trace(marker = list(color = 'rgb(55, 83, 109)'))
+
+# Education
+plot_ly(train_cat, x = ~education) %>%
+  layout(width = 400, autosize=F, title = "Patient Education", xaxis = list(title = "1-High School 2-Bachelors 3-Masters 4-PhD"), yaxis = list(title = "Count")) %>%
+  add_trace(marker = list(color = 'rgb(55, 83, 109)'))
+
+# Current smoker
+plot_ly(train_cat, x = ~currentSmoker) %>%
+  layout(width = 300, autosize=F, title = "Current smoker count", xaxis = list(title = "0-No 1-Yes"), yaxis = list(title = "Count")) %>%
+  add_trace(marker = list(color = 'rgb(55, 83, 109)'))
+
+# BP medication
+plot_ly(train_cat, x = ~BPMeds) %>%
+  layout(width = 300, autosize=F, title = "BP medication patients", xaxis = list(title = "0-No 1-Yes"), yaxis = list(title = "Count")) %>%
+  add_trace(marker = list(color = 'rgb(55, 83, 109)'))
+
+# Prevalent stroke
+plot_ly(train_cat, x = ~prevalentStroke) %>%
+  layout(width = 300, autosize=F, title = "Prevalent stroke patients", xaxis = list(title = "0-No 1-Yes"), yaxis = list(title = "Count")) %>%
+  add_trace(marker = list(color = 'rgb(55, 83, 109)'))
+
+# Prevalent hypertension
+plot_ly(train_cat, x = ~prevalentHyp) %>%
+  layout(width = 300, autosize=F, title = "Prevalent hypertension patients", xaxis = list(title = "0-No 1-Yes"), yaxis = list(title = "Count")) %>%
+  add_trace(marker = list(color = 'rgb(55, 83, 109)'))
+
+# Diabetes
+plot_ly(train_cat, x = ~diabetes) %>%
+  layout(width = 300, autosize=F, title = "Diabetic patients", xaxis = list(title = "0-No 1-Yes"), yaxis = list(title = "Count")) %>%
+  add_trace(marker = list(color = 'rgb(55, 83, 109)'))
+```
+Data pre-processing - Outlier detection
+```{r}
+# We will employ multiple techniques to detect and treat outliers
+library(e1071)
+apply(train_cont, 2, skewness) 
+apply(train_cont, 2, kurtosis)
+# Plotting the Qunatile-Quantile normal plots to check if variables are skewed or show a kutorsis
+# QQ-Plot for age
+qqnorm(train_cont$age)
+qqline(train_cont$age)
+# QQ-Plot for cigarettes per day
+qqnorm(train_cont$cigsPerDay)
+qqline(train_cont$cigsPerDay)
+# QQ-Plot for total cholestrol
+qqnorm(train_cont$totChol)
+qqline(train_cont$totChol)
+# QQ-Plot for systolic BP
+qqnorm(train_cont$sysBP)
+qqline(train_cont$sysBP)
+# QQ-Plot for diastolic BP
+qqnorm(train_cont$diaBP)
+qqline(train_cont$diaBP)
+# QQ-Plot for BMI
+qqnorm(train_cont$BMI)
+qqline(train_cont$BMI)
+# QQ-Plot for heart rate
+qqnorm(train_cont$heartRate)
+qqline(train_cont$heartRate)
+# QQ-Plot for glucose
+qqnorm(train_cont$glucose)
+qqline(train_cont$glucose)
+```
+Skewness and Kutosis - Outlier detection continued
+```{r}
+library(moments)
+skewness(data.cont, na.rm = TRUE) # Checking the skewness of the data with removal of NA's
+kurtosis(data.cont, na.rm = TRUE) # Checking the kurtosis of the data with removal of NA's
+
+# Skewness interpretation : The distribution of the data is for all variables slightly skewed towards right, except for glucose which has a significant right skew. So data is postively skewed.
+
+# Kurtosis interpretation : The distribution is a mixture of negative and positive excess kurtosis. Only Age shows an excess kurtosis value of 2.0098 which is < 3, hence is a negative excess kurtosis or simply put - platykurtic. Meaning that Age variable shows a thinner tail and therefore has a less chance of producing outliers compared to a normal distribution. However all other variables show an excess kurtosis value > 3, which implies a positive excess kurtosis or - leptokurtic. Meaning that these variables show a comparitively fatter tail and therefore can produce outliers compared to a normal distribution. Important factor however is the extent of excess kurtosis, all variables except glucose, are in close proximity to 3 (Normal distribution), hence will produce outliers which might not affect the dataset, glucose on the other hand has a positive excess kurtosis value of 61.62 which is way greater than 3, thus can produce extreme outliers to significantly affect the data, unless treated accordingly. This also concludes that the variable glucose is red-flagged by both skewness and kurtosis values. There is still an unexplored factor of 388 missing values, which may play a crucial role.
+```
+Data Pre-processing - Treating outliers
+```{r}
+
+# We will replace all the outlier values with NA initially, and then impute the NA values with using PMM
+
+CPD_OL<- boxplot(train_cont$cigsPerDay, plot = F)$out
+train_cont[train_cont$cigsPerDay %in% CPD_OL, "cigsPerDay"] = NA
+sum(is.na(train_cont$cigsPerDay))
+
+TC_OL <- boxplot(train_cont$totChol, plot = F)$out
+train_cont[train_cont$totChol %in% TC_OL, "totChol"] = NA
+sum(is.na(train_cont$totChol))
+
+SBP_OL <- boxplot(train_cont$sysBP, plot = F)$out
+train_cont[train_cont$sysBP %in% SBP_OL, "sysBP"] = NA
+sum(is.na(train_cont$sysBP))
+
+DBP_OL <- boxplot(train_cont$diaBP, plot = F)$out
+train_cont[train_cont$diaBP %in% DBP_OL, "diaBP"] = NA
+sum(is.na(train_cont$diaBP))
+
+BMI_OL <- boxplot(train_cont$BMI, plot = F)$out
+train_cont[train_cont$BMI %in% BMI_OL, "BMI"] = NA
+sum(is.na(train_cont$BMI))
+
+HR_OL <- boxplot(train_cont$heartRate, plot = F)$out
+train_cont[train_cont$heartRate %in% HR_OL, "heartRate"] = NA
+sum(is.na(train_cont$heartRate))
+
+GL_OL <- boxplot(train_cont$glucose, plot = F)$out
+train_cont[train_cont$glucose %in% GL_OL, "glucose"] = NA
+sum(is.na(train_cont$glucose))
+
+# For continuous variables, we will use a Predictive Mean Matching (PMM) algorithm to impute missing values
+impute_cont_1 <- mice(train_cont, m=5, method = 'pmm', maxit = 10, seed = 123)
+summary(impute_cont_1)
+train_cont_1 <- complete(impute_cont_1, 2)
+```
+Data Pre-processing - Balancing imbalanced classification variables
+```{r}
+library(caret)
+'%ni%' <- Negate('%in%')
+df_bind <- cbind(train_cat, train_cont_1, train_dep)
+df_bind <- df_bind[,c(1,8,7,2,9,3,4,5,6,10,11,12,13,14,15,16)]
+names(df_bind)[3] <- "Education"
+names(df_bind)[16] <- "TenYearCHD"
+
+set.seed(100)
+trainDataIndex <- createDataPartition(y = df_bind$TenYearCHD, p = 0.7, list = F)
+trainData <- df_bind[trainDataIndex, ]
+testData <- df_bind[-trainDataIndex, ]
+table(trainData$TenYearCHD)
+# Down sampling the majority class
+set.seed(100)
+down_train <- downSample(x = trainData[, -ncol(trainData)], y = trainData$TenYearCHD)
+table(down_train$Class)
+# Up sampling the minority class
+set.seed(100)
+up_train <- upSample(x = trainData[, -ncol(trainData)], y = trainData$TenYearCHD)
+table(up_train$Class)
+
+```
+Data Modelling - Logistic Regression
+```{r}
+# Build Logistic Regression model with all variables - Oversampling
+LRM1 <- glm(Class ~ ., family = "binomial", data=up_train) # Default LR model with all parameters
+summary(LRM1)
+# Build Logistic Regression model with significant variables - Oversampling
+LRM2 <- glm(Class ~ .-Education-currentSmoker-diaBP-BMI-heartRate-glucose-BPMeds-prevalentStroke, family = "binomial", data=up_train)
+summary(LRM2)
+# Build Logistic Regression model with all variables - Undersampling
+LRM3 <- glm(Class ~ ., family = "binomial", data=down_train) # Default LR model with all parameters
+summary(LRM3)
+# Build Logistic Regression model with significant variables - Undersampling
+LRM4 <- glm(Class ~ .-Education-currentSmoker-diaBP-BMI-heartRate-glucose-BPMeds-prevalentStroke, family = "binomial", data=down_train)
+summary(LRM4)
+```
+Data Modelling - Naive Bayes
+```{r}
+# Build Naive Bayes model with all variables
+library(GGally)
+library(e1071)
+NBM = train(down_train[,-16],down_train[,16],'nb',trControl=trainControl(method='cv',number=10))
+NBM
+# PLotting the variable importance plot
+X <- varImp(NBM)
+plot(X)
+ggpairs(down_train)
+```
+Data Modelling - CART
+```{r}
+library(rpart,quietly = TRUE)
+library(caret,quietly = TRUE)
+library(rpart.plot,quietly = TRUE)
+library(rattle)
+# Checking the number of perfect splits for each variable
+number.perfect.splits <- apply(X=down_train[-16], MARGIN = 2, FUN = function(col){
+t <- table(down_train$Class,col)
+sum(t == 0)
+})
+ 
+# Descending order of perfect splits
+order <- order(number.perfect.splits, decreasing = TRUE)
+number.perfect.splits <- number.perfect.splits[order]
+ 
+# Plot graph
+par(mar=c(10,2,2,2))
+barplot(number.perfect.splits,
+main="Number of perfect splits vs feature",
+xlab="",ylab="Feature",las=2,col="wheat")
+# Building CART model with classification
+CART <- rpart(Class~., data=down_train, method = "class")
+CART
+rpart.plot(CART)
+```
+Data Modelling - Random Forest
+```{r}
+# Build Random Forest model with classification
+library(randomForest)
+set.seed(100)
+RFM1 <- train(Class ~ ., data = down_train, method = 'rf', trControl = trainControl(method = 'cv', number = 10))
+RFM1
+```
+Model evaluation - Logistic Regression
+```{r}
+library(ROCR)
+library(InformationValue)
+pred_LR1 <- predict(LRM3, newdata = testData, type = "response")
+table(testData$TenYearCHD, pred_LR1 > 0.5)
+# Checking evaluation for multiple decision thresholds
+pred_LR2 <- predict(LRM4, newdata = testData, type = "response")
+table(testData$TenYearCHD, pred_LR2 > 0.5)
+table(testData$TenYearCHD, pred_LR2 > 0.6)
+table(testData$TenYearCHD, pred_LR2 > 0.7)
+table(testData$TenYearCHD, pred_LR2 > 0.8)
+table(testData$TenYearCHD, pred_LR2 > 0.9)
+
+ROC_LR <- prediction(pred_LR2, testData$TenYearCHD)
+as.numeric(performance(ROC_LR, "auc")@y.values)
+AUC_LR <- performance(ROC_LR, "tpr", "fpr")
+plot(AUC_LR)
+optimalCutoff(actuals = testData$TenYearCHD, predictedScores = pred_LR2) # Checking the optimal cutoff 
+plotROC(actuals = testData$TenYearCHD, predictedScores = pred_LR2) # Plotting the ROC curve
+
+#Accuracy of the model
+(686+141)/1271
+
+#Predicted	Event	No Event
+#Event	    A	    B
+#No Event	  C	    D
+
+#Sensitivity = A/(A+C)
+686/(686+52)
+#Specificity = D/(B+D)
+141/(141+392)
+#Prevalence = (A+C)/(A+B+C+D)
+(686+52)/1271
+#PPV = (sensitivity * prevalence)/((sensitivity*prevalence) + ((1-specificity)*(1-prevalence)))
+(686/(686+52))*((686+52)/1271)/(686/(686+52))*((686+52)/1271)+(1-141/(141+392))*(1-(686+52)/1271)
+#NPV = (specificity * (1-prevalence))/(((1-sensitivity)*prevalence) + ((specificity)*(1-prevalence)))
+
+#Detection Rate = A/(A+B+C+D)
+686/1271
+#Detection Prevalence = (A+B)/(A+B+C+D)
+(686+392)/1271
+#Balanced Accuracy = (sensitivity+specificity)/2
+(686/(686+52)+141/(141+392))/2
+#Precision = A/(A+B)
+686/(686+392)
+#Recall = A/(A+C)
+686/(686+52)
+#F1 = (1+beta^2)*precision*recall/((beta^2 * precision)+recall)
+2*(686/(686+392)*686/(686+52))/(686/(686+392)+686/(686+52))
+```
+Model evaluation - Naive Bayes
+```{r}
+Pred_NB <- predict(NBM, newdata = testData)
+confusionMatrix(Pred_NB, testData$TenYearCHD)
+
+ROC_NB <- prediction(as.numeric(Pred_NB), as.numeric(testData$TenYearCHD))
+as.numeric(performance(ROC_NB, "auc")@y.values)
+AUC_NB <- performance(ROC_NB, "tpr", "fpr")
+plot(AUC_NB)
+optimalCutoff(actuals = testData$TenYearCHD, predictedScores = as.numeric(Pred_NB)) # Checking the optimal cutoff 
+plotROC(actuals = testData$TenYearCHD, predictedScores = as.numeric(Pred_NB)) # Plotting the ROC curve
+```
+Model evaluation - CART
+```{r}
+pred_CART <- predict(object=CART,testData[-16],type="class")
+t <- table(testData$TenYearCHD, pred_CART)
+t
+
+ROC_CART <- prediction(as.numeric(pred_CART), as.numeric(testData$TenYearCHD))
+as.numeric(performance(ROC_CART, "auc")@y.values)
+AUC_CART <- performance(ROC_CART, "tpr", "fpr")
+plot(AUC_CART)
+optimalCutoff(actuals = testData$TenYearCHD, predictedScores = as.numeric(pred_CART)) # Checking the optimal cutoff 
+plotROC(actuals = testData$TenYearCHD, predictedScores = as.numeric(pred_CART)) # Plotting the ROC curve
+```
+Model evaluation - Random Forest
+```{r}
+pred_RF <- predict(RFM1, newdata = testData)
+t <- table(testData$TenYearCHD, pred_RF)
+t
+confusionMatrix(pred_RF, testData$TenYearCHD)
+
+ROC_RF <- prediction(as.numeric(pred_RF), as.numeric(testData$TenYearCHD))
+as.numeric(performance(ROC_RF, "auc")@y.values)
+AUC_RF <- performance(ROC_RF, "tpr", "fpr")
+plot(AUC_RF)
+optimalCutoff(actuals = testData$TenYearCHD, predictedScores = as.numeric(pred_RF)) # Checking the optimal cutoff 
+plotROC(actuals = testData$TenYearCHD, predictedScores = as.numeric(pred_RF)) # Plotting the ROC curve
+# End of project
+```
+
+```{r}
+# Thank you!
+```
+

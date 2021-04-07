@@ -1,0 +1,352 @@
+---
+title: "Data Mining Project - Thera Bank"
+output: html_notebook
+---
+Importing the dataset
+```{r}
+library(readxl)
+bank_data <- read_excel("Thera Bank_Personal_Loan_Modelling-dataset-1.xlsx")
+head(bank_data)
+str(bank_data)
+bank_data <- bank_data[,-1]
+head(bank_data)
+```
+Exploratory Data Analysis
+```{r}
+#install.packages("DataExplorer")
+#install.packages("RColorBrewer")
+library(DataExplorer)
+library(ggplot2)
+library(RColorBrewer)
+plot_str(bank_data)
+# Check for missing values
+introduce(bank_data)
+plot_missing(bank_data)
+#Univariate Analysis
+plot_histogram(bank_data)
+plot_density(bank_data)
+#Bivariate Analysis
+plot_correlation(bank_data, type = 'c')
+plot_scat <- bank_data[, c("Age", "Income (in K/month)", "CCAvg", "Mortgage")]
+plot_scatterplot(plot_scat, by = "Age", sampled_rows = 1000L)
+create_report(bank_data[,-14])
+```
+More EDA analysis with funModeling
+```{r}
+#install.packages("funModeling")
+library(funModeling)
+basic_eda <- function(data)
+{
+  glimpse(data)
+  df_status(data)
+  freq(data) 
+  profiling_num(data)
+  plot_num(data)
+  describe(data)
+}
+basic_eda(bank_data)
+```
+
+```{r}
+library(Hmisc)
+describe(bank_data)
+```
+
+
+Check for missing values and cleaning the data
+```{r}
+library(dplyr)
+
+#Check if any of the columns in our dataset contains missing values
+list_na <- colnames(bank_data)[ apply(bank_data, 2, anyNA) ]
+list_na
+
+# Now once we have identified the missing values exists in the Family members column, we will treat it.
+# We will replace the family members missing values with median values of that column.
+median_missing <- apply(bank_data[,colnames(bank_data) %in% list_na],
+      2,
+      median,
+      na.rm =  TRUE)
+bank_data <- bank_data %>%
+            mutate(Family_median  = ifelse(is.na(bank_data$`Family members`), median_missing[1], bank_data$`Family members`)) 
+head(bank_data)
+
+# Re-order the newly mutated column to original position of family members
+bank_data <- bank_data[, c(1,2,3,4,14,5,6,7,8,9,10,11,12,13)]
+head(bank_data)
+bank_data$`Family members` <- NULL
+head(bank_data)
+
+#Re-Check if any of the columns in our dataset still contains missing values
+list_na <- colnames(bank_data)[ apply(bank_data, 2, anyNA) ]
+list_na
+
+# Delete the redundant dataframe bank_data_replace
+rm(bank_data_replace)
+```
+1. K-means Clustering
+```{r}
+# Let us calculate the distance matrix
+dist_mat <- dist(bank_data, method = "euclidean") 
+# The distances are loaded highly on few variables and even on the remaining variables, we will scale our dataset in order to avoid the uneven load balancing of distances.
+write.csv(as.matrix(dist_mat), file = "dist_matrix.csv")
+# Scaling the data linearly
+bank_data_scaled <- scale(bank_data)
+write.csv(bank_data_scaled, file = "Bank_scaled.csv")
+
+# Check if the dataset is scaled properly by apply function, and check if mean = 0 and std. dev. = 1.
+apply(bank_data_scaled,2,mean)
+apply(bank_data_scaled,2,sd)
+# Therefore we conclude that, the scaling has been proper as mean values are close to 0 and std. dev values are all 1.
+
+# We will now re-compute the scaled matrix, this time using the Minkowski method.
+# As of now we will set the value of p i.e. the power of minkowski distance as 2 => Euclidean distance.
+dist_mat_scaled <- dist(bank_data_scaled, method = "minkowski", p=2)
+# The scaled distance matrix shows a good load balance with the distances between observations. We will store it to a file, as the dataset is too large to be printed out on a console.
+write.csv(as.matrix(dist_mat_scaled), file = "dist_matrix_scaled.csv")
+```
+Perform K-means clustering => Centroid based approach
+```{r}
+library(factoextra)
+library(NbClust)
+# Plot to find the optimum number of clusters
+fviz_nbclust(bank_data_scaled[,-9], kmeans, method = "wss")+
+  geom_vline(xintercept = 3, linetype = 2) +
+  geom_vline(xintercept = 4, linetype = 2) +
+  geom_vline(xintercept = 5, linetype = 2) +
+  geom_vline(xintercept = 6, linetype = 2) +
+  labs(subtitle = "Elbow Method")
+```
+
+```{r}
+# Plot the cluster plot to better understand what the clusters mean.
+library(cluster)
+# Perform the K-means clustering
+# Set the seed in order to have the same set of values for sampling with every iteration.
+seed = 1000
+set.seed(seed)
+clust_1 <- kmeans(x=bank_data_scaled[,-9], centers = 3, nstart = 3)
+clust_2 <- kmeans(x=bank_data_scaled[,-9], centers = 4, nstart = 3)
+clust_3 <- kmeans(x=bank_data_scaled[,-9], centers = 5, nstart = 3)
+clust_4 <- kmeans(x=bank_data_scaled[,-9], centers = 6, nstart = 3)
+#clusplot(bank_data_scaled[,-9], clust_1$cluster, color = T, shade = T, labels = 2, lines = 1)
+```
+Checking the clusters with centers 3,4,5 and 6
+```{r}
+fviz_cluster(clust_1, bank_data_scaled[,-9])
+fviz_cluster(clust_2, bank_data_scaled[,-9])
+fviz_cluster(clust_3, bank_data_scaled[,-9])
+fviz_cluster(clust_4, bank_data_scaled[,-9])
+```
+Additional plots
+```{r}
+fviz_cluster(clust_1, data = bank_data_scaled[,-9],
+             palette = c("#2E9FDF","#00AFBB","#E7B800","#FC4E07"),
+             ellipse.type = "euclid", #Concentration Ellipse
+             star.plot = T,
+             ggtheme = theme_minimal()
+             )
+
+fviz_cluster(clust_2, data = bank_data_scaled[,-9],
+             palette = c("#2E9FDF","#00AFBB","#E7B800","#FC4E07"),
+             ellipse.type = "euclid", #Concentration Ellipse
+             star.plot = T,
+             ggtheme = theme_minimal()
+             )
+
+fviz_cluster(clust_3, data = bank_data_scaled[,-9],
+             palette = c("#2E9FDF","#00AFBB","#E7B800","#FC4E07","#FF00FF"),
+             ellipse.type = "euclid", #Concentration Ellipse
+             star.plot = T,
+             ggtheme = theme_minimal()
+             )
+
+fviz_cluster(clust_4, data = bank_data_scaled[,-9],
+             palette = c("#2E9FDF","#00AFBB","#E7B800","#FC4E07","#FF00FF", "#AFEEEE"),
+             ellipse.type = "euclid", #Concentration Ellipse
+             star.plot = T,
+             ggtheme = theme_minimal()
+             )
+```
+
+Determining the appropriate number of clusters - Approach 1
+```{r}
+totWss = rep(0:2)
+for(k in 1:50){
+  set.seed(seed)
+  clust_5 <- kmeans(x=bank_data_scaled[,-9], centers = k, nstart = 2, iter.max = 30)
+  totWss[k] <- clust_5$tot.withinss
+}
+print(totWss)
+print(c(1:50))
+plot(c(1:50), totWss, type = "b")
+```
+Determining the appropriate number of clusters - Approach 2
+```{r}
+library(NbClust)
+set.seed(seed)
+# This function will do all the manual work we did in approach 1, the following parameters are required, the minimum and the maximum number of clusters, as well as the method, which in this case will be k-means clustering.
+nc <- NbClust(bank_data, min.nc = 3, max.nc = 10, method = "kmeans")
+table(nc$Best.n[1,])
+```
+Re-iterate our previously build model with the recommended number of clusters as 4
+```{r}
+set.seed(seed) # Again set the seed so that the same values are picked for sampling
+clust_2 <- kmeans(x=bank_data_scaled[,-9], centers = 4, nstart = 3)
+# From the above information we get, 4 as recommended number of clusters, hence we will build our model with 4 clusters.
+print(clust_2)
+#clusplot(bank_data_scaled, clust_3$cluster, color = T, shade = T, labels = 2, lines = 1)
+```
+Add the cluster assignment column to our dataframe and build a profile
+```{r}
+#Removing the already existing the column
+bank_data <- bank_data[,-14]
+bank_data$Cluster <- clust_2$cluster # Add the cluster assignment column to our existing dataframe
+# Now we will aggregate all the customers which are belonging to one particular cluster and try to determine if we can find any useful insights for the bank.
+cust_profile <- aggregate(bank_data[,c(1:13)], list(bank_data$Cluster), FUN = "median")
+write.csv(cust_profile, "Customer_Profile.csv")
+# If we divide our dataset in to 4 clusters, we can split the criterion with respect to multiple fields such as age, experience, income, average credit card spending in a month, and the mortgage value of the houses.
+# The bank then can predict which group customers are a better target for home loans and also will mitigate their risk of customers being deliquent or defaulters on the loans.
+```
+2. CART - Decision trees
+```{r}
+# Loading the required libraries
+library(caTools)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+library(data.table)
+library(ROCR)
+```
+Now we will need to partition the dataset in to train and test subsets.
+```{r}
+seed = 100
+set.seed(seed) # Ensure that the same sample is picked in each iteration.
+bank_split = sample(1:nrow(bank_data[,-(14)]),0.70*nrow(bank_data[,-(14)]))# Split the dataset in the ratio 70-30%
+bank_train = bank_data[,-(14)][bank_split,]# With training data to be 70% for maximised learning from model
+bank_test = bank_data[,-(14)][-bank_split,] # With testing data to be 30% 
+nrow(bank_train) # Check number of rows in our training data
+nrow(bank_test) # Check number of rows in our testing data
+```
+We will in brief check the structure of our train and test datasets
+```{r}
+str(bank_train)
+str(bank_test)
+```
+Now we will build a tree with target variable and all others.
+```{r}
+cont_par <- rpart.control(minsplit = 12, minbucket = 4, cp=0, xval = 10)
+bank_tree <- rpart(formula = bank_train$Personal_Loan ~ ., data = bank_train, method = "class", control = cont_par)
+bank_tree
+rpart.plot(bank_tree)
+```
+
+```{r}
+printcp(bank_tree)
+plotcp(bank_tree)
+bank_tree$variable.importance
+#summary(bank_tree)
+#path.rpart(bank_tree,c(2:20))
+```
+Pruning the tree with minimum error and updated complexity parameter value.
+```{r}
+# Setting the complexity parameter to the value corressponding to the lowest xerror, hence we will prune the tree with only the variables that have high importance in determining the outcome of our cart model.
+pruned_tree <- prune(bank_tree, cp=0.006, "CP")
+pruned_tree
+rpart.plot(pruned_tree)
+```
+Checking the predictions
+```{r}
+# Now we will add two variables to our dataset and see how good our model is doing at predicting the values.
+bank_train$predict.class <- predict(pruned_tree, bank_train, type="class")
+bank_train$predict.score <- predict(pruned_tree, bank_train, type="prob")[,"1"]
+bank_test$predict.class <- predict(pruned_tree, bank_test, type="class")
+bank_test$predict.score <- predict(pruned_tree, bank_test, type="prob")[,"1"]
+
+bank_cart <- table(bank_test$Personal_Loan, bank_test$predict.class)
+bank_cart
+```
+Check for the even variable distribution
+```{r}
+library(ROSE)
+data_balanced <- ovun.sample(bank_train$`Personal Loan` ~ ., data = bank_train, method = "both", p=0.5, N=3500, seed = seed)
+wtable(data.rose)
+table(bank_train$`Personal Loan`)
+prop.table(table(bank_train$`Personal Loan`))
+prop.table(table(bank_test$`Personal Loan`))
+prop.table(table(bank_data$`Personal Loan`))
+```
+3. Random forests
+```{r}
+##import randomForest library for building random forest model
+library(randomForest)
+
+## set a seed to start the randomness
+seed = 1000
+set.seed(seed)
+
+##Build the first RF model
+bank_forest = randomForest(bank_train[,c(1:13)]$`Personal_Loan` ~., data = bank_train[,c(1:13)], ntree=51, mtry=10, nodesize=10, importance=TRUE)
+
+##Print the model to see the OOB and error rate
+print(bank_forest)
+
+##Plot the RF to know the optimum number of trees
+plot(bank_forest)
+legend("topright",c("OOB","0","1"),text.col = 1:6,lty = 1:3, col = 1:3)
+
+##Identify the importance of the variables
+importance(bank_forest)
+varImpPlot(bank_forest)
+```
+Performance evaluation metrics
+```{r}
+# Confusion matrix
+CART_CM_train = table(bank_train$Personal_Loan,bank_train$predict.class)
+CART_CM_test = table(bank_test$Personal_Loan,bank_test$predict.class)
+CART_CM_train
+CART_CM_test 
+```
+
+```{r}
+## Error Rate
+(CART_CM_train[1,2]+CART_CM_train[2,1])/nrow(bank_train)
+(CART_CM_test[1,2]+CART_CM_test[2,1])/nrow(bank_test)
+##Accuracy
+(CART_CM_train[1,1]+CART_CM_train[2,2])/nrow(bank_train)
+(CART_CM_test[1,1]+CART_CM_test[2,2])/nrow(bank_test)
+```
+
+```{r}
+library(ROCR)
+library(ineq)
+library(InformationValue)
+
+predobjtrain = prediction(bank_train$predict.score,bank_train$Personal_Loan)
+preftrain = performance(predobjtrain,"tpr","fpr")
+plot(preftrain)
+
+predobjtest = prediction(bank_test$predict.score,bank_test$Personal_Loan)
+preftest = performance(predobjtest,"tpr","fpr")
+plot(preftest)
+
+##KS
+max(preftrain@y.values[[1]]-preftrain@x.values[[1]])
+max(preftest@y.values[[1]]-preftest@x.values[[1]])
+
+##AUC
+auctrain=performance(predobjtrain,"auc")
+as.numeric(auctrain@y.values)
+auctest=performance(predobjtest,"auc")
+as.numeric(auctest@y.values)
+
+##gini
+ineq(bank_train$predict.score,"gini")
+ineq(bank_test$predict.score,"gini")
+
+##Concordance
+Concordance(actuals=bank_train$Personal_Loan, predictedScores = bank_train$predict.score)
+Concordance(actuals=bank_test$Personal_Loan, predictedScores = bank_test$predict.score)
+```
+

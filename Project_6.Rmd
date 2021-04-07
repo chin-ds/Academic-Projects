@@ -1,0 +1,194 @@
+---
+title: "Time Series Forecasting Project"
+output: html_notebook
+---
+Importing the required packages
+```{r}
+library(forecast) # Importing the dataset present in the Forecast package
+library(timeSeries) # Importing the essential functions used for time series data manipulation
+View(gas) # View the time series dataset, with annual monthly gas production in Australia
+ts.plot(gas, col = "DarkOrchid") # Plotting the time series to observe the components
+```
+Storing the dataset as a time series object
+```{r}
+# As the dataset is a monthly time series, the frequency is mentioned as 12.
+gas_ts <- ts(gas, start = c(1956,1), frequency = 12) # Saving the dataset as a time series object
+# The Start date for the object is the beginning of the dataset and no end date is required as entire dataset is considered for forecasting.
+```
+Checking periodicity
+```{r}
+library(xts) # Package which holds the periodicity function
+periodicity(gas_ts) # Check periodicity of the time series object
+```
+
+Exploring the time series object
+```{r}
+start(gas_ts) # Returns the start year and month of the time series object
+end(gas_ts) # Returns the end year and month of the time series object
+frequency(gas_ts) # Returns the frequenct of the time series object
+summary(gas_ts) # Returns the statistical summary of the time series object
+cycle(gas_ts) # Returns the cycle of the time series object
+
+gas_ts_Q <- aggregate(gas_ts, nfrequency = 4) # Aggregating time series object to quarterly
+gas_ts_Y <- aggregate(gas_ts, nfrequency = 1) # Aggregating time series object to yearly
+```
+Check for missing values
+```{r}
+library(imputeTS)
+ plotNA.distribution(gas_ts, colPoints = "steelblue",
+  colBackgroundMV = "indianred2", main = "Distribution of NAs",
+  xlab = "Time", ylab = "Value", pch = 20, cexPoints = 0.8,
+  col = "black")
+```
+Plotting the time series objects
+```{r}
+plot.ts(gas_ts, main = "Australian monthly gas production 1956-1995", xlab = "Year", ylab = "Units") # Monthly time series plot
+plot.ts(gas_ts_Q, main = "Australian quarterly gas production 1956-1995", xlab = "Year", ylab = "Units") # Quarterly time series plot
+plot.ts(gas_ts_Y, main = "Australian yearly gas production 1956-1995", xlab = "Year", ylab = "Units") # Yearly time series plot
+
+# Advanced plots
+ggseasonplot(gas_ts, year.labels.left = T, year.labels = T, col = 1:40, main = "Australian seasonal gas production", xlab = "Months", ylab = "Units") # Seasonal time series plot
+monthplot(gas_ts, main = "Australian gas production - month wise 1956-1995", xlab = "Months", ylab = "Units") # Monthly time series plot
+boxplot(gas_ts ~ cycle(gas_ts), col = c("DarkOrange", "Purple"), main = "Australian monthly gas production - Boxplot", xlab = "Months", ylab = "Units", horizontal = T)
+```
+Decomposition of the time series
+```{r}
+decomp_gas_add <- decompose(gas_ts, type = "additive") # Decomposing the additive model - S + T + N
+plot(decomp_gas_add) # Decomposition plot of the additive model
+decomp_gas_mul <- decompose(gas_ts, type = "multiplicative") # Decomposing the multiplicative model - S * T * N
+plot(decomp_gas_mul) # Decomposition plot of the multiplicative model
+# decomp_gas_log <- log(gas_ts)
+# plot.ts(decomp_gas_log)
+```
+Individual component plots
+```{r}
+plot(decomp_gas_add$trend) # Trend plot for additive model of time series
+plot(decomp_gas_add$seasonal) # Seasonal plot for additive model of time series
+plot(decomp_gas_add$random) # Error/Random plot for additive model of time series
+
+plot(decomp_gas_mul$trend) # Trend plot for multiplicative model of time series
+plot(decomp_gas_mul$seasonal) # Seasonal plot for multiplicative model of time series
+plot(decomp_gas_mul$random) # Error/Random plot for multiplicative model of time series
+```
+Advanced decomposition of time series using STL
+```{r}
+plot(stl(gas_ts, s.window = "periodic")) # Decomposing the components of the time series - Trend, Seasonality and Noise
+decomp_gas_stl <- stl(gas_ts, s.window = 7) # Setting seasonal window to 3
+plot(decomp_gas_stl)
+deseason_gas <- decomp_gas_stl$time.series[,2]+decomp_gas_stl$time.series[,3]
+ts.plot(deseason_gas, gas_ts, col=c("DarkOrchid", "Orange"), main="Comparison of Gas produced and Deseasoned Series")
+```
+Differentiating trend and seasonality from time series data
+```{r}
+library(ggfortify)
+decomp_gas_add$seasonal
+decomp_gas_mul$seasonal
+decomp_gas_stl
+```
+Seasonal and Trend analysis for Additive model
+```{r}
+autoplot(decomp_gas_add$trend)
+autoplot(decomp_gas_add$seasonal)
+autoplot(decomp_gas_add)
+```
+Seasonal and Trend analysis for Mutiplicative model
+```{r}
+autoplot(decomp_gas_mul$trend)
+autoplot(decomp_gas_mul$seasonal)
+autoplot(decomp_gas_mul)
+```
+Extracting residuals from additive model
+```{r}
+res_add <- decomp_gas_add$x - decomp_gas_add$seasonal - decomp_gas_add$trend
+res_add
+```
+Extracting residuals from additive model
+```{r}
+res_mul <- decomp_gas_mul$x - decomp_gas_mul$seasonal - decomp_gas_mul$trend
+res_mul
+```
+Residual plots
+```{r}
+qqnorm(res_add)
+qqnorm(res_mul)
+autoplot(res_add)
+autoplot(res_mul)
+```
+Augmented Dickey-Fuller test for stationarity
+```{r}
+library(tseries)
+adf.test(gas_ts)
+```
+Kwiatkowski–Phillips–Schmidt–Shin (KPSS) test
+```{r}
+kpss.test(gas_ts, null = "Trend")
+```
+Split the dataset into training and testing data
+```{r}
+gas_train <- window(gas_ts, end = c(1994,8))
+gas_test <- window(gas_ts, start = c(1994, 9))
+
+gas_train
+gas_test
+```
+Holt's Model
+```{r}
+gas_holt <- holt(gas_train, type = "additive", h = 12)
+autoplot(gas_holt)
+
+gas_holt$model
+accuracy(gas_holt, gas_test)
+```
+Holt's Winter Model
+```{r}
+library(forecast)
+gas_HW <- HoltWinters(gas_train, gamma = FALSE)
+gas_HW
+plot(gas_HW)
+
+gas_HWF <- forecast(gas_HW, h = 12)
+plot(gas_HWF)
+```
+ARIMA modelling - Manual ARIMA
+```{r}
+acf(gas_ts)
+pacf(gas_ts)
+```
+Differencing the time series
+```{r}
+gas_ds <- seasadj(decomp_gas_stl)
+plot(gas_ds)
+gas_d1 <- diff(gas_ds, differences = 1)
+plot(gas_d1)
+adf.test(gas_d1, alternative = "stationary")
+```
+ACF and PACF for stationary series
+```{r}
+acf(gas_d1, main = "ACF for monthly Australian gas production")
+pacf(gas_d1)
+```
+Splitting again into train and test
+```{r}
+gas_d1_train <- window(gas_d1, end = c(1994,8))
+gas_d1_test <- window(gas_d1, start = c(1994, 9))
+```
+ARIMA model - Auto ARIMA
+```{r}
+gas_ARIMA <- auto.arima(gas_d1_train, seasonal = FALSE)
+gas_ARIMA
+tsdisplay(residuals(gas_ARIMA))
+```
+Ljung-Box test
+```{r}
+Box.test(gas_ARIMA$residuals)
+```
+Forecasting with ARIMA
+```{r}
+fcast <- forecast(gas_ARIMA, h=12)
+plot(fcast)
+```
+Accuracy
+```{r}
+accuracy(fcast, gas_d1_test)
+```
+

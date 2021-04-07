@@ -1,0 +1,414 @@
+---
+title: "Mode of transportation prediction"
+output: html_notebook
+---
+Import the dataset
+```{r}
+car_file <- read.csv("Cars.csv", header = T) # Import the dataset and store it as a dataframe
+head(car_file) # Check the top few rows of our dataset to confirm the dataset is correctly loaded
+str(car_file) # Check the structure of the dataset
+
+# Converting the interger datatypes to factor as 3 variables are categorical with binary classification
+car_file$Engineer <- as.factor(car_file$Engineer)
+car_file$MBA <- as.factor(car_file$MBA)
+car_file$license <- as.factor(car_file$license)
+
+str(car_file) # Re-check the structure of the dataset after converting 3 variables
+summary(car_file)
+```
+Identify missing values in the dataset
+```{r}
+library(VIM)
+library(mice)
+md.pattern(car_file)
+mice_plot <- aggr(car_file, col=c('Aquamarine','Darkorchid'),
+                    numbers=TRUE, sortVars=TRUE,
+                    labels=names(car_file), cex.axis=.7,
+                    gap=3, ylab=c("Missing data","Pattern"))
+```
+Imputing missing value with MICE
+```{r}
+imputed_car_file <- mice(car_file, m=5, maxit = 5, method = 'logreg', seed = 50)
+summary(imputed_car_file)
+imputed_car_file$imp$MBA # Check what value was imputed after performing logistic regression on missing cell
+
+imputed_car_file <- complete(imputed_car_file) # Create a dataframe from the model
+md.pattern(imputed_car_file) # Re-check for any missing values in the dataset
+```
+Check for imbalance in dependent variable
+```{r}
+table(car_file$Transport)
+(83/418)*100
+(35/418)*100
+(300/418)*100
+```
+Convert the dependent variable to a binary classification with 2 levels as we are to deal only with car.
+```{r}
+imputed_car_file$Transport <- ifelse(imputed_car_file$Transport == "2Wheeler", "0",
+                                     ifelse(imputed_car_file$Transport == "Public Transport", "0",
+                                            ifelse(imputed_car_file$Transport == "Car", "1", NA)))
+```
+Re-check the balance between the depedent variable
+```{r}
+table(imputed_car_file$Transport)
+(383/418)*100
+(35/418)*100
+```
+EDA - Exploratory data analysis
+```{r}
+imputed_car_file$Transport <- as.factor(imputed_car_file$Transport) # Convert the datatyoe of dependent variable to factor
+str(imputed_car_file) # Check the structure of the dataset after conversion
+```
+EDA - continious variable plots - Histograms
+```{r}
+library(ggplot2)
+ggplot(imputed_car_file, aes(x=Age)) + geom_histogram(bins = 80, binwidth = 0.5, color = "Darkorchid", fill= "Aquamarine")
+ggplot(imputed_car_file, aes(x=Work.Exp)) + geom_histogram(bins = 80, binwidth = 0.5, color = "Darkorchid", fill= "Aquamarine")
+ggplot(imputed_car_file, aes(x=Salary)) + geom_histogram(bins = 80, binwidth = 1, color = "Darkorchid", fill= "Aquamarine")
+ggplot(imputed_car_file, aes(x=Distance)) + geom_histogram(bins = 80, binwidth = 0.5, color = "Darkorchid", fill= "Aquamarine")
+```
+EDA - continious variable plots - Boxplots
+```{r}
+attach(imputed_car_file)
+
+boxplot(Age~Transport)
+
+ggplot(imputed_car_file, aes(x = Age)) + 
+  geom_density(aes(fill = Transport), alpha = 0.3) + 
+  scale_color_manual(values = c("#868686FF", "#EFC000FF")) + 
+  scale_fill_manual(values = c("darkturquoise", "lightcoral")) + xlim(-30,250)
+
+boxplot(Work.Exp~Transport)
+
+ggplot(imputed_car_file, aes(x = Work.Exp)) + 
+  geom_density(aes(fill = Transport), alpha = 0.3) + 
+  scale_color_manual(values = c("#868686FF", "#EFC000FF")) + 
+  scale_fill_manual(values = c("darkturquoise", "lightcoral")) + xlim(-30,250)
+
+boxplot(Salary~Transport)
+
+ggplot(imputed_car_file, aes(x = Salary)) + 
+  geom_density(aes(fill = Transport), alpha = 0.3) + 
+  scale_color_manual(values = c("#868686FF", "#EFC000FF")) + 
+  scale_fill_manual(values = c("darkturquoise", "lightcoral")) + xlim(-30,250)
+
+boxplot(Distance~Transport)
+
+ggplot(imputed_car_file, aes(x = Distance)) + 
+  geom_density(aes(fill = Transport), alpha = 0.3) + 
+  scale_color_manual(values = c("#868686FF", "#EFC000FF")) + 
+  scale_fill_manual(values = c("darkturquoise", "lightcoral")) + xlim(-30,250)
+```
+EDA - continious varaible plots - Density plots
+```{r}
+ggplot(imputed_car_file, aes(x=Age)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(Age)),
+            color="Purple", linetype="dashed", size=1)
+ggplot(imputed_car_file, aes(x=Work.Exp)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(Work.Exp)),
+            color="Purple", linetype="dashed", size=1)
+ggplot(imputed_car_file, aes(x=Salary)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(Salary)),
+            color="Purple", linetype="dashed", size=1)
+ggplot(imputed_car_file, aes(x=Distance)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(Distance)),
+            color="Purple", linetype="dashed", size=1)
+```
+EDA - continious variable plots - Histogram-Density plots
+```{r}
+ggplot(imputed_car_file, aes(x=Age)) +
+ geom_histogram(aes(y=..density..), bins = 80, binwidth = 0.5, color = "Deepskyblue2", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(Age)),
+            color="Darkmagenta", linetype="dashed", size=1)
+
+ggplot(imputed_car_file, aes(x=Work.Exp)) +
+ geom_histogram(aes(y=..density..), bins = 80, binwidth = 0.5, color = "Deepskyblue2", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(Work.Exp)),
+            color="Darkmagenta", linetype="dashed", size=1)
+
+ggplot(imputed_car_file, aes(x=Salary)) +
+ geom_histogram(aes(y=..density..), bins = 80, binwidth = 1, color = "Deepskyblue2", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(Salary)),
+            color="Darkmagenta", linetype="dashed", size=1)
+
+ggplot(imputed_car_file, aes(x=Distance)) +
+ geom_histogram(aes(y=..density..), bins = 80, binwidth = 0.5, color = "Deepskyblue2", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(Distance)),
+            color="Darkmagenta", linetype="dashed", size=1)
+```
+EDA - continious variable plots - Jitter-Boxplots
+```{r}
+library(dplyr)
+# Create separate boxplots for each attribute
+imputed_car_file %>%
+ ggplot(aes(x="", y=Age)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+imputed_car_file %>%
+ ggplot(aes(x="", y=Work.Exp)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+imputed_car_file %>%
+ ggplot(aes(x="", y=Salary)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+imputed_car_file %>%
+ ggplot(aes(x="", y=Distance)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+```
+EDA - categorical variable plotting
+```{r}
+ggplot(imputed_car_file, aes(x = Gender, fill = Transport)) + 
+  geom_bar(width = 0.25, alpha=0.5) + 
+  scale_fill_manual(values = c('darkturquoise', 'lightcoral'))
+
+ggplot(imputed_car_file, aes(x = Engineer, fill = Transport)) + 
+  geom_bar(width = 0.25, alpha=0.5) + 
+  scale_fill_manual(values = c('darkturquoise', 'lightcoral'))
+
+ggplot(imputed_car_file, aes(x = MBA, fill = Transport)) + 
+  geom_bar(width = 0.25, alpha=0.5) + 
+  scale_fill_manual(values = c('darkturquoise', 'lightcoral'))
+
+ggplot(imputed_car_file, aes(x = license, fill = Transport)) + 
+  geom_bar(width = 0.25, alpha=0.5) + 
+  scale_fill_manual(values = c('darkturquoise', 'lightcoral'))
+```
+Table distribution of categorical variables
+```{r}
+prop.table(table(Gender,Transport),1)*100
+prop.table(table(Engineer,Transport),1)*100
+prop.table(table(MBA,Transport),1)*100
+prop.table(table(license,Transport),1)*100
+```
+Preparing data for analysis - Splitting the dataset
+```{r}
+library(DMwR)
+library(caret)
+library(caTools) # import library caTools for splitting data
+set.seed(48) # Set the seed to repeat the same sample set for each iteration
+car_split <- sample.split(imputed_car_file$Transport, SplitRatio = 0.7) # Split the dataset into 70-30
+car_train <- subset(imputed_car_file, car_split==TRUE) # Create subset of train data from dataset
+car_test <- subset(imputed_car_file, car_split==FALSE) # Create subset of test data from dataset
+prop.table(table(car_train$Transport)) # Check the distribution of the dependent variable in train data
+prop.table(table(car_test$Transport)) # Check the distribution of the dependent variable in test data
+```
+Preparing the data for analysis - SMOTE
+```{r}
+table(car_train$Transport)
+# Event rate of minority class is 24/292 which is 8.2%
+balanced_car <- SMOTE(Transport~., data = car_train, perc.over = 1500, k=9, perc.under = 300)
+table(balanced_car$Transport)
+# Event rate of the minority class is 384/1464 which is 46.4%
+```
+Splitting the SMOTE dataset into train and test
+```{r}
+set.seed(100) # Set the seed to repeat the same sample set for each iteration
+smote_car_split <- sample.split(balanced_car$Transport, SplitRatio = 0.7) # Split the dataset into 70-30
+smote_car_train <- subset(balanced_car, smote_car_split==TRUE) # Create subset of train data from dataset
+smote_car_test <- subset(balanced_car, smote_car_split==FALSE) # Create subset of test data from dataset
+table(smote_car_train$Transport)
+```
+Logistic Regression
+```{r}
+LR_model1 = glm(Transport ~ ., data = smote_car_train, 
+                   family = binomial(link="logit"))
+
+summary(LR_model1)
+```
+Check for multi-collinearity
+```{r}
+library(car)
+vif(LR_model1)
+```
+Refining the logistic regression model
+```{r}
+LR_model2 = glm(Transport ~ . -Age -Work.Exp, data = smote_car_train, 
+                   family = binomial(link="logit"))
+
+summary(LR_model2)
+```
+Re-check multi-collinearity with refined model
+```{r}
+vif(LR_model2)
+```
+Model significance tests
+```{r}
+library(lmtest)
+library(pscl)
+
+# Likelihood ratio test
+lrtest(LR_model2)
+
+# Pseudo R-squared
+pR2(LR_model2)
+
+#Odds Ratio
+exp(coef(LR_model2))
+
+#Probability
+exp(coef(LR_model2))/(1+exp(coef(LR_model2)))
+```
+Model performance metrics - Train data
+```{r}
+pred_train_LR <- predict(LR_model2, data=smote_car_train, type = "response")
+y_pred_num = ifelse(pred_train_LR>0.5,1,0)
+y_pred = factor(y_pred_num, levels=c(0,1))
+y_actual = smote_car_train$Transport
+confusionMatrix(y_pred,y_actual,positive="1")
+```
+Model performance metrics 2 - Train data
+```{r}
+library(ROCR)
+smote_car_train.roc <- prediction(pred_train_LR, smote_car_train$Transport)
+plot(performance(smote_car_train.roc, "tpr", "fpr"), 
+     col = "red", main = "ROC Curve for train data")
+abline(0, 1, lty = 8, col = "blue")
+
+# AUC
+smote_car_train.auc = performance(smote_car_train.roc, "auc")
+smote_car_train.area = as.numeric(slot(smote_car_train.auc, "y.values"))
+smote_car_train.area
+
+# KS
+smote_car_ks.train <- performance(smote_car_train.roc, "tpr", "fpr")
+smote_car_train.ks <- max(attr(smote_car_ks.train, "y.values")[[1]] - (attr(smote_car_ks.train, "x.values")[[1]]))
+smote_car_train.ks
+
+# Gini
+smote_car_train.gini = (2 * smote_car_train.area) - 1
+smote_car_train.gini
+```
+Model performance metrics - Test data
+```{r}
+pred_test_LR = predict(LR_model2, newdata=smote_car_test, type="response")
+y_pred_num = ifelse(pred_test_LR>0.35,1,0)
+y_pred = factor(y_pred_num, levels=c(0,1))
+y_actual = smote_car_test$Transport
+confusionMatrix(y_pred,y_actual,positive="1")
+```
+
+```{r}
+library(ROCR)
+smote_car_test.roc <- prediction(pred_test_LR, smote_car_test$Transport)
+plot(performance(smote_car_test.roc, "tpr", "fpr"), 
+     col = "red", main = "ROC Curve for test data")
+abline(0, 1, lty = 8, col = "blue")
+
+# AUC
+smote_car_test.auc = performance(smote_car_test.roc, "auc")
+smote_car_test.area = as.numeric(slot(smote_car_test.auc, "y.values"))
+smote_car_test.area
+
+# KS
+smote_car_ks.test <- performance(smote_car_test.roc, "tpr", "fpr")
+smote_car_test.ks <- max(attr(smote_car_ks.test, "y.values")[[1]] - (attr(smote_car_ks.test, "x.values")[[1]]))
+smote_car_test.ks
+
+# Gini
+smote_car_test.gini = (2 * smote_car_test.area) - 1
+smote_car_test.gini
+```
+
+AUC and KS plots
+```{r}
+library(InformationValue)
+plotROC(actuals = smote_car_test$Transport, predictedScores = pred_test_LR)
+pred_test_LR
+
+ks_stat <- InformationValue::ks_stat(actuals = smote_car_test$Transport, predictedScores = pred_test_LR)
+ks_stat
+ks_plot(actuals = smote_car_test$Transport, predictedScores = pred_test_LR)
+```
+KNN - K nearest neighbour
+```{r}
+#Convert all the categorical variables to boolean
+
+scale = preProcess(smote_car_train, method = "range")
+
+train.norm.data = predict(scale, smote_car_train)
+test.norm.data = predict(scale, smote_car_test)
+
+knn_fit = train(Transport ~., data = train.norm.data, method = "knn",
+                 trControl = trainControl(method = "cv", number = 3),
+                 tuneLength = 10)
+
+knn_fit$bestTune$k
+plot(knn_fit)
+```
+Performance metrics - Test data
+```{r}
+library(class)
+knn_fit<- knn(train = train.norm.data[,-c(2,3,4,8)], test = test.norm.data[,-c(2,3,4,8)], cl= train.norm.data[,9],k = 5,prob=TRUE) 
+#dim(train.norm.data)
+#dim(test.norm.data)
+table(test.norm.data[,9],knn_fit)
+```
+NB - Naive Bayes model building
+```{r}
+library(e1071)
+NB = naiveBayes(x=train.norm.data[,1:8], y=as.factor(train.norm.data[,9]))
+# Performance metrics (out-of-the-sample)
+pred_nb<-predict(NB,newdata = test.norm.data[,1:8])
+
+table(test.norm.data[,9],pred_nb)
+```
+Bagging
+```{r}
+library(gbm)         # basic implementation using AdaBoost
+library(xgboost)      # a faster implementation of a gbm
+library(ipred)
+library(rpart)
+
+car_bagging <- bagging(Transport ~.,
+                           data=smote_car_train,
+                           control=rpart.control(maxdepth=5, minsplit=4))
+
+
+smote_car_test$pred.class <- predict(car_bagging, smote_car_test)
+
+
+#gd_test$pred.class<- ifelse(gd_test$pred.class<0.5,0,1)
+
+
+#confusionMatrix(data=factor(gd_test$pred.class),
+#                reference=factor(gd_test$Class),
+#                positive='1')
+
+table(smote_car_test$Transport,smote_car_test$pred.class)
+```
+
+```{r}
+## work around bug in gbm 2.1.1
+predict.gbm <- function (object, newdata, n.trees, type = "link", single.tree = FALSE, ...) {
+  if (missing(n.trees)) {
+    if (object$train.fraction < 1) {
+      n.trees <- gbm.perf(object, method = "test", plot.it = FALSE)
+    }
+    else if (!is.null(object$cv.error)) {
+      n.trees <- gbm.perf(object, method = "cv", plot.it = FALSE)
+    }
+    else {
+      n.trees <- length(object$train.error)
+    }
+    cat(paste("Using", n.trees, "trees...\n"))
+    gbm::predict.gbm(object, newdata, n.trees, type, single.tree, ...)
+  }
+}
+```
+
+Boosting
+```{r}
+car_boosting <- gbm(
+  formula = Transport ~ .,
+  distribution = "bernoulli",
+  data = smote_car_train,
+  n.trees = 100,
+  interaction.depth = 1,
+  shrinkage = 0.001,
+  n.cores = NULL, # will use all cores by default
+  verbose = FALSE
+  )  
+
+smote_car_test$pred.class <- predict(car_boosting, smote_car_test, type = "response")
+
+table(smote_car_test$Transport,smote_car_test$pred.class)
+```
+
+

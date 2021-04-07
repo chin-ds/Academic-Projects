@@ -1,0 +1,263 @@
+---
+title: "Telecom customer churn"
+output: html_notebook
+---
+
+Loading the excel dataset into R and storing it an object
+```{r}
+library(readxl)
+cell_data <- read_excel("Cellphone.xlsx")
+str(cell_data) # Checking the structure of the dataset.
+summary(cell_data[,-c(1,3,4)])
+```
+Exploratory data analysis - EDA
+```{r}
+#Check for missing data
+library(DataExplorer)
+introduce(cell_data) # Check if the dataset has any missing values
+plot_missing(cell_data) # Plot the variables, listing the missing values if any.
+table(cell_data$Churn) # Check the load distribution for our dependent variable.
+create_report(cell_data[,-c(1,3,4)])
+```
+Univariate visualisation plots with ggplot2 - Histograms
+```{r}
+library(ggplot2)
+# We will plot histograms for the independent variables in the dataset
+ggplot(cell_data, aes(x=AccountWeeks)) + geom_histogram(bins = 50, binwidth = 5, color = "Darkorchid", fill= "Aquamarine") # Histogram for AccountWeeks
+ggplot(cell_data, aes(x=DayMins)) + geom_histogram(bins = 50, binwidth = 7, color = "Darkorchid", fill= "Aquamarine") # Histogram for DayMins
+ggplot(cell_data, aes(x=DayCalls)) + geom_histogram(bins = 50, binwidth = 3, color = "Darkorchid", fill= "Aquamarine") # Histogram for DayCalls
+ggplot(cell_data, aes(x=MonthlyCharge)) + geom_histogram(bins = 50, binwidth = 2, color = "Darkorchid", fill= "Aquamarine") # Histogram for MonthlyCharge
+```
+Univariate visualisation plots with ggplot2 - Density plots
+```{r}
+ggplot(cell_data, aes(x=AccountWeeks)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(AccountWeeks)),
+            color="Purple", linetype="dashed", size=1)
+ggplot(cell_data, aes(x=DayMins)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(DayMins)),
+            color="Purple", linetype="dashed", size=1)
+ggplot(cell_data, aes(x=DayCalls)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(DayCalls)),
+            color="Purple", linetype="dashed", size=1)
+ggplot(cell_data, aes(x=MonthlyCharge)) + geom_density(color = "Orange") + geom_vline(aes(xintercept=mean(MonthlyCharge)),
+            color="Purple", linetype="dashed", size=1)
+```
+Histogram-Density plots
+```{r}
+ggplot(cell_data, aes(x=AccountWeeks)) +
+ geom_histogram(aes(y=..density..), bins = 50, binwidth = 5, color = "Darkorchid", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(AccountWeeks)),
+            color="DarkOrange", linetype="dashed", size=1)
+
+ggplot(cell_data, aes(x=DayMins)) +
+ geom_histogram(aes(y=..density..), bins = 50, binwidth = 7, color = "Darkorchid", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(DayMins)),
+            color="DarkOrange", linetype="dashed", size=1)
+
+ggplot(cell_data, aes(x=DayCalls)) +
+ geom_histogram(aes(y=..density..), bins = 50, binwidth = 3, color = "Darkorchid", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(DayCalls)),
+            color="DarkOrange", linetype="dashed", size=1)
+
+ggplot(cell_data, aes(x=MonthlyCharge)) +
+ geom_histogram(aes(y=..density..), bins = 50, binwidth = 2, color = "Darkorchid", fill= "Aquamarine", alpha = 0.3) +
+ geom_density(color = "Darkmagenta", alpha=0.7) + geom_vline(aes(xintercept=mean(MonthlyCharge)),
+            color="DarkOrange", linetype="dashed", size=1)
+```
+Univariate visualisation plots with ggplot2 - Box plots
+```{r}
+library(dplyr)
+# Create separate boxplots for each attribute
+cell_data %>%
+ ggplot(aes(x="", y=AccountWeeks)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+cell_data %>%
+ ggplot(aes(x="", y=DataUsage)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+cell_data %>%
+ ggplot(aes(x="", y=DayMins)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+cell_data %>%
+ ggplot(aes(x="", y=DayCalls)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+cell_data %>%
+ ggplot(aes(x="", y=MonthlyCharge)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+cell_data %>%
+ ggplot(aes(x="", y=OverageFee)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+
+cell_data %>%
+ ggplot(aes(x="", y=RoamMins)) +
+ geom_boxplot(varwidth=T, outlier.colour = "Deepskyblue2", fill="Darkorchid4") + coord_flip() +  geom_jitter(colour="Darkorange",width=0.2,alpha=0.2)
+```
+Bi-variate analysis and plots - Correlation plot
+```{r}
+library(corrplot)
+corr_mat <- cor(cell_data) # Shows the correlation matrix with all the variables
+round(corr_mat,2)
+corrplot(corr_mat, method = "number")
+```
+Bi-variate analysis and plots - Scatter plots
+```{r}
+library(ggplot2)
+theme_set(
+  theme_bw() +
+    theme(legend.position = "top")
+  )
+
+# Initiate a ggplot with different parameters
+b <- ggplot(cell_data, aes(x = DayMins, y = DayCalls))
+# Change color, shape and size
+b + geom_point(color = "#00AFBB", size = 2, shape = 22) + geom_smooth(method="auto", se=TRUE, fullrange=FALSE, level=0.95, col="DarkOrchid")
+
+b <- ggplot(cell_data, aes(x = DayMins, y = MonthlyCharge))
+b + geom_point(color = "#00AFBB", size = 2, shape = 22) + geom_smooth(method="auto", se=TRUE, fullrange=FALSE, level=0.95, col="DarkOrchid")
+
+b <- ggplot(cell_data, aes(x = MonthlyCharge, y = RoamMins))
+b + geom_point(color = "#00AFBB", size = 2, shape = 22) + geom_smooth(method="auto", se=TRUE, fullrange=FALSE, level=0.95, col="DarkOrchid")
+
+b <- ggplot(cell_data, aes(x = MonthlyCharge, y = OverageFee))
+b + geom_point(color = "#00AFBB", size = 2, shape = 22) + geom_smooth(method="auto", se=TRUE, fullrange=FALSE, level=0.95, col="DarkOrchid")
+
+b <- ggplot(cell_data, aes(x = DayMins, y = RoamMins))
+b + geom_point(color = "#00AFBB", size = 2, shape = 22) + geom_smooth(method="auto", se=TRUE, fullrange=FALSE, level=0.95, col="DarkOrchid")
+
+b <- ggplot(cell_data, aes(x = AccountWeeks, y = OverageFee))
+b + geom_point(color = "#00AFBB", size = 2, shape = 22) + geom_smooth(method="auto", se=TRUE, fullrange=FALSE, level=0.95, col="DarkOrchid")
+```
+Outlier detection and identification with grDevices
+```{r}
+#Outlier detection for continious variables in our dataset
+ov1 <- boxplot.stats(cell_data$DataUsage)$out
+ov2 <- boxplot.stats(cell_data$DayMins)$out
+ov3 <- boxplot.stats(cell_data$DayCalls)$out
+ov4 <- boxplot.stats(cell_data$MonthlyCharge)$out
+ov5 <- boxplot.stats(cell_data$OverageFee)$out
+ov6 <- boxplot.stats(cell_data$RoamMins)$out
+ov <- c(ov1,ov2,ov3,ov4,ov5,ov6)
+library(EnvStats)
+rosnerTest(ov, k = 161, warn = F)
+
+```
+2. Logistic Regression model
+```{r}
+set.seed(1000) # Set the seed to repeat the same sample set for each iteration
+library(caTools) # import library caTools for splitting data
+cell_split <- sample.split(cell_data$Churn, SplitRatio = 0.7) # Split the dataset into 70-30
+cell_train <- subset(cell_data, cell_split==TRUE) # Create subset of train data from dataset
+cell_test <- subset(cell_data, cell_split==FALSE) # Create subset of test data from dataset
+prop.table(table(cell_train$Churn)) # Check the distribution of the dependent variable in train data
+prop.table(table(cell_test$Churn)) # Check the distribution of the dependent variable in test data
+```
+Build the logistic regression model
+```{r}
+model <- glm(Churn ~ ., data = cell_train, family = binomial)
+summary(model)
+```
+Checking the predictions based on our model
+```{r}
+pred_test <- predict(model, newdata=cell_test, type="response") # Store the prediction of unseen data into a variable.
+View(pred_test) # View the probability predictions from the model of the test data.
+```
+Checking the confusion matrix for the model
+```{r}
+table(cell_test$Churn, pred_test>0.5) # Confusion matrix for the logistic regression model
+```
+Model accuracy parameters - Confusion matrix
+```{r}
+(832+26)/nrow(cell_test) # Accuracy of the model
+(119+23)/nrow(cell_test) # Classification error of the model
+(26/(26+119)) # Sensitivity of the model OR True positive rate
+(832/(832+23)) # Specificity of the model OR True negative rate
+(23/(23+832)) # False positive rate
+(119/(119+26)) # False negative rate
+(26/(26+23)) # Precision of the model OR Positive predicted value
+```
+AUC - Area under the curve
+```{r}
+library(ROCR)
+ROCPred <- prediction(pred_test, cell_test$Churn)
+as.numeric(performance(ROCPred, "auc")@y.values)
+```
+Performace plot ROC - curve
+```{r}
+cell_perf <- performance(ROCPred, "tpr", "fpr")
+plot(cell_perf)
+library(InformationValue)
+optimalCutoff(actuals = cell_test$Churn, predictedScores = pred_test) # Checking the optimal cutoff 
+plotROC(actuals = cell_test$Churn, predictedScores = pred_test) # Plotting the ROC curve
+```
+Model evaluation metrics
+```{r}
+#Gini co-efficient
+gini_index <- ((0.7997-0.5)/0.5) # Calculating the Gini-coefficient for the model
+#Concordance and Discordance
+Concordance(actuals = cell_test$Churn, predictedScores = pred_test) # Calculating the concordance and discordance of the model.
+ks_stat <- InformationValue::ks_stat(actuals = cell_test$Churn, predictedScores = pred_test)
+ks_stat
+ks_plot(actuals = cell_test$Churn, predictedScores = pred_test)
+```
+3. KNN - K nearest neighbours
+```{r}
+# We will first normalize the data with the help of the following function
+norm <- function(x) { (x-min(x)) / (max(x)-min(x)) } # Function to normalize the dataset
+cell_norm <- as.data.frame(lapply(cell_data[,-1], norm)) # Apply the normalization to dataset except the dependent variable
+View(cell_norm) # View the contents of the dataset
+cell_norm_data <- cbind(cell_data[,1], cell_norm) # Merge the normalized data with the dependent variable
+View(cell_norm_data) # View the contents of the newly formed complete dataset
+```
+Partitioning the data again in train and test for KNN - with normalized values
+```{r}
+cell_split_KNN <- sample.split(cell_norm_data$Churn, SplitRatio = 0.7) # Split the dataset into 70-30
+cell_train_KNN <- subset(cell_norm_data, cell_split_KNN==TRUE) # Create subset of train data from dataset
+cell_test_KNN <- subset(cell_norm_data, cell_split_KNN==FALSE) # Create subset of test data from dataset
+prop.table(table(cell_train_KNN$Churn)) # Check the distribution of the dependent variable in train data
+prop.table(table(cell_test_KNN$Churn)) # Check the distribution of the dependent variable in test data
+```
+Building KNN - classifier
+```{r}
+library(class)
+cell_pred_KNN <- knn(cell_train_KNN[,-1], cell_test_KNN[,-1], cell_train_KNN[,1], k=19) # Starting with k = 19.
+pred_KNN <- table(cell_test_KNN[,1], cell_pred_KNN) # Confusion matrix for the KNN model
+pred_KNN
+sum(diag(pred_KNN)/sum(pred_KNN)) # Accuracy of the KNN model
+```
+Re-iterate the KNN model with different inputs of k
+```{r}
+set.seed(1000)
+cell_pred_KNN <- knn(cell_train_KNN[,-1], cell_test_KNN[,-1], cell_train_KNN[,1], k=13) # With k = 13 we get best accuracy
+pred_KNN <- table(cell_test_KNN[,1], cell_pred_KNN) # Confusion matrix for the KNN model
+pred_KNN
+sum(diag(pred_KNN)/sum(pred_KNN)) # Accuracy of the KNN model
+```
+KNN-model evaluation metrics
+```{r}
+(846+57)/nrow(cell_test) # Accuracy of the model
+(88+9)/nrow(cell_test) # Classification error of the model
+(57/(57+88)) # Sensitivity of the model OR True positive rate
+(846/(846+9)) # Specificity of the model OR True negative rate
+(9/(9+846)) # False positive rate
+(88/(88+57)) # False negative rate
+(57/(57+9)) # Precision of the model OR Positive predicted value
+```
+KS-plot, concordance, Gini for KNN
+```{r}
+ks_plot(actuals = cell_test_KNN$Churn, predictedScores = cell_pred_KNN)
+Concordance(actuals = cell_test_KNN$Churn, predictedScores = cell_pred_KNN)
+```
+
+4. Naive Bayes
+```{r}
+library(e1071)
+#set.seed(1000)
+cell_NB <- naiveBayes(Churn ~ ., data = cell_train_KNN)
+pred_NB <- predict(cell_NB, cell_test_KNN, type = "class")
+View(pred_NB)
+cmat_NB <- table(cell_test_KNN[,1], pred_NB)
+sum(diag(cmat_NB)/sum(cmat_NB))
+```
+
+

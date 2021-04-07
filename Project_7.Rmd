@@ -1,0 +1,271 @@
+---
+title: "Web & Social Media Analytics"
+output: html_notebook
+---
+Import the required libraries
+```{r}
+library(tm) # Library for text mining
+#install the required libraries
+#install.packages("twitteR")
+library(twitteR) # For accessing Twitter API
+#install.packages("ROAuth")
+library(ROAuth) # For fetching tweets of Twitter
+library(plyr)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(httr)
+library(wordcloud)
+#install.packages("sentimentr")
+library(sentimentr)
+library(RCurl)
+library(syuzhet)
+library(RColorBrewer)
+```
+Importing the dataset
+```{r}
+web_data <- read.csv("Dataset.csv",header = T) # Import the dataset to a variable
+head(web_data) # View the top few rows of the dataset
+str(web_data) # View the structure of the dataset
+
+# web_data[web_data==""] <- NA # Convert the empty strings in the dataset to NA
+#library(DataExplorer) 
+#plot_missing(web_data) # Identify missing values from the dataset
+#web_data <- na.omit(web_data) # Remove observations where data is absent
+```
+Creating and manipulating the text in the corpus
+```{r}
+corpus <- VCorpus(VectorSource(web_data$description)) # Creating a corpus only for the description column of the dataset
+```
+Manipulating the text in the corpus
+```{r}
+corpus = tm_map(corpus, content_transformer(tolower)) # Convert contents of the corpus to lower-case
+
+corpus = tm_map(corpus, content_transformer(removePunctuation)) # Remove punctuations from the contents of the corpus
+
+corpus = tm_map(corpus, content_transformer(removeWords), c("and", "the", stopwords("english"))) # Remove stopwords and articles
+
+corpus = tm_map(corpus, content_transformer(stripWhitespace)) # Remove extra whitespaces from the corpus
+
+corpus = tm_map(corpus, content_transformer(stemDocument)) # Stem document
+
+pal<- brewer.pal(8, "Set1") # Setting the color brewer palette to dark shade
+wordcloud(corpus,colors=pal,max.words=50) # Wordcloud after text manipulation is complete
+wordcloud(corpus,colors=pal,max.words=100)
+```
+Creating a Document Term Matrix (DTM)
+```{r}
+dtm = DocumentTermMatrix(corpus) # Create a document term matrix
+dtm
+```
+Create a dataframe with required 
+```{r}
+df = as.data.frame(as.matrix(dtm))
+colnames(df) = make.names(colnames(df)) # Rename the column names of the dataframe
+df$deal = web_data$deal # Append the dependent varaible to our dataframe
+table(df$deal) # Fetch the total deals from the dataset
+```
+Build a CART model
+```{r}
+library(rpart)
+library(rpart.plot)
+
+web_cart = rpart(deal ~ ., data=df, method="class") # model the CART with dataframe and with deal as dependent varaible
+prp(web_cart, extra=2) # CART diagram
+rpart.plot(web_cart)
+```
+Evaluate the performance of the CART model
+```{r}
+pred_cart <- predict(web_cart, data=df, type="class") # Predict for the CART model
+
+first_cart <- table(df$deal, pred_cart) # Confusion matrix of the CART model
+first_cart
+
+accuracy_cart <- sum(diag(first_cart))/sum(first_cart) # Calculating the accuracy of the CART model
+error_cart <- (1-accuracy_cart) # Calculating the classification error of the CART model
+sensitivity_cart <- first_cart[2,"TRUE"]/(first_cart[2,"TRUE"] + first_cart[2,"FALSE"]) # True Positive Rate of the CART model
+specificity_cart <- first_cart[1,"FALSE"]/(first_cart[1,"FALSE"] + first_cart[1,"TRUE"]) # True Negative Rate of the CART model
+precision_cart <- first_cart[2,"TRUE"]/(first_cart[2,"TRUE"] + first_cart[1,"TRUE"]) # Precision of the CART model
+prevalance_cart <- (first_cart[2,"FALSE"]+first_cart[2,"TRUE"])/sum(first_cart) # Prevalance of the CART model
+
+accuracy_cart
+error_cart
+sensitivity_cart
+specificity_cart
+precision_cart
+prevalance_cart
+```
+Build a Random Forest model
+```{r}
+library(randomForest)
+set.seed(123) # Set seed to generate the same sample over multiple iterations
+
+web_rf <- randomForest(deal ~ ., data=df) # model the RF with dataframe and with deal as dependent varaible
+```
+Evaluate the performance of the RF model
+```{r}
+pred_RF = predict(web_rf, data=df) # Predict for the RF model
+
+first_RF <- table(df$deal, pred_RF>= 0.5) # Confusion matrix of the RF model with probabilities greather than 0.5
+first_RF
+accuracy_RF = sum(diag(first_RF))/sum(first_RF) # Calculating the accuracy of the RF model
+error_RF <- (1-accuracy_RF) # Calculating the classification error of the RF model
+sensitivity_RF <- first_RF[2,"TRUE"]/(first_RF[2,"TRUE"] + first_RF[2,"FALSE"]) # True Positive Rate of the RF model
+specificity_RF <- first_RF[1,"FALSE"]/(first_RF[1,"FALSE"] + first_RF[1,"TRUE"]) # True Negative Rate of the RF model
+precision_RF <- first_RF[2,"TRUE"]/(first_RF[2,"TRUE"] + first_RF[1,"TRUE"]) # Precision of the RF model
+prevalance_RF <- (first_RF[2,"FALSE"]+first_RF[2,"TRUE"])/sum(first_RF) # Prevalance of the RF model
+
+accuracy_RF
+error_RF
+sensitivity_RF
+specificity_RF
+precision_RF
+prevalance_RF
+
+varImpPlot(web_rf, main = 'Variable Importance Plot: Shark Tank', type = 2) # variable importance plot for RF model 
+```
+Build a Logistic Regression model
+```{r}
+set.seed(123) # Set seed to generate the same sample over multiple iterations
+
+web_LR = glm(deal~., data = df) # # model the Logistic Regression with dataframe and with deal as dependent varaible
+```
+Evaluate the performance of Logistic Regression model
+```{r}
+pred_LR = predict(web_LR, data=df) # Predict for the LR model
+
+first_LR <- table(df$deal, pred_LR > 0.5) # Confusion matrix of the LR model with probabilities greather than 0.5
+first_LR
+accuracy_LR = sum(diag(first_LR))/sum(first_LR) # Calculating the accuracy of the LR model
+error_LR <- (1-accuracy_LR) # Calculating the classification error of the LR model
+sensitivity_LR <- first_LR[2,"TRUE"]/(first_LR[2,"TRUE"] + first_LR[2,"FALSE"]) # True Positive Rate of the LR model
+specificity_LR <- first_LR[1,"FALSE"]/(first_LR[1,"FALSE"] + first_LR[1,"TRUE"]) # True Negative Rate of the LR model
+precision_LR <- first_LR[2,"TRUE"]/(first_LR[2,"TRUE"] + first_LR[1,"TRUE"]) # Precision of the LR model
+prevalance_LR <- (first_LR[2,"FALSE"]+first_LR[2,"TRUE"])/sum(first_LR) # Prevalance of the LR model
+
+accuracy_LR
+error_LR
+sensitivity_LR
+specificity_LR
+precision_LR
+prevalance_LR
+```
+Binding the data frame with ratio variable
+```{r}
+df$ratio <- (web_data$askedFor)/(web_data$valuation) # Variable is the ratio of Asked For and Valuation
+```
+Re-run CART model
+```{r}
+web_cart_R = rpart(deal ~ ., data=df, method="class") # CART model with Ratio variable
+
+prp(web_cart_R, extra=2) # CART diagram
+rpart.plot(web_cart_R)
+```
+Re-Evaluate performance of the CART model
+```{r}
+pred_cart_R <- predict(web_cart_R, data=df, type="class") # Predict for the CART model
+
+final_cart <- table(df$deal, pred_cart_R) # Confusion matrix of the CART model
+final_cart
+
+accuracy_cart_R <- sum(diag(final_cart))/sum(final_cart) # Calculating the accuracy of the CART model
+error_cart_R <- (1-accuracy_cart_R) # Calculating the classification error of the CART model
+sensitivity_cart_R <- final_cart[2,"TRUE"]/(final_cart[2,"TRUE"] + final_cart[2,"FALSE"]) # True Positive Rate of the CART model
+specificity_cart_R <- final_cart[1,"FALSE"]/(final_cart[1,"FALSE"] + final_cart[1,"TRUE"]) # True Negative Rate of the CART model
+precision_cart_R <- final_cart[2,"TRUE"]/(final_cart[2,"TRUE"] + final_cart[1,"TRUE"]) # Precision of the CART model
+prevalance_cart_R <- (final_cart[2,"FALSE"]+final_cart[2,"TRUE"])/sum(final_cart) # Prevalance of the CART model
+
+accuracy_cart_R
+error_cart_R
+sensitivity_cart_R
+specificity_cart_R
+precision_cart_R
+prevalance_cart_R
+```
+Re-run RF model
+```{r}
+web_rf_R <- randomForest(deal ~ ., data=df) # RF model with Ratio variable
+```
+Re-Evaluate performance of the RF model
+```{r}
+pred_RF_R = predict(web_rf_R, data=df) # Predict for the RF model
+
+final_RF <- table(df$deal, pred_RF_R>= 0.5) # Confusion matrix of the RF model with probabilities greather than 0.5
+final_RF
+accuracy_RF_R = sum(diag(final_RF))/sum(final_RF) # Calculating the accuracy of the RF model
+error_RF_R <- (1-accuracy_RF_R) # Calculating the classification error of the RF model
+sensitivity_RF_R <- final_RF[2,"TRUE"]/(final_RF[2,"TRUE"] + final_RF[2,"FALSE"]) # True Positive Rate of the RF model
+specificity_RF_R <- final_RF[1,"FALSE"]/(final_RF[1,"FALSE"] + final_RF[1,"TRUE"]) # True Negative Rate of the RF model
+precision_RF_R <- final_RF[2,"TRUE"]/(final_RF[2,"TRUE"] + final_RF[1,"TRUE"]) # Precision of the RF model
+prevalance_RF_R <- (final_RF[2,"FALSE"]+final_RF[2,"TRUE"])/sum(final_RF) # Prevalance of the RF model
+
+accuracy_RF_R
+error_RF_R
+sensitivity_RF_R
+specificity_RF_R
+precision_RF_R
+prevalance_RF_R
+
+varImpPlot(web_rf_R, main = 'Variable Importance Plot with Ratio: Shark Tank', type = 2) # variable importance plot for RF model 
+```
+Re-Run LR model
+```{r}
+web_LR_R = glm(deal~., data = df) # # model the Logistic Regression with dataframe and with deal as dependent varaible
+```
+Evaluate the performance of Logistic Regression model
+```{r}
+pred_LR_R = predict(web_LR_R, data=df) # Predict for the LR model
+
+final_LR <- table(df$deal, pred_LR_R > 0.5) # Confusion matrix of the LR model with probabilities greather than 0.5
+final_LR
+accuracy_LR_R = sum(diag(final_LR))/sum(final_LR) # Calculating the accuracy of the LR model
+error_LR_R <- (1-accuracy_LR) # Calculating the classification error of the LR model
+sensitivity_LR_R <- final_LR[2,"TRUE"]/(final_LR[2,"TRUE"] + final_LR[2,"FALSE"]) # True Positive Rate of the LR model
+specificity_LR_R <- final_LR[1,"FALSE"]/(final_LR[1,"FALSE"] + final_LR[1,"TRUE"]) # True Negative Rate of the LR model
+precision_LR_R <- final_LR[2,"TRUE"]/(final_LR[2,"TRUE"] + final_LR[1,"TRUE"]) # Precision of the LR model
+prevalance_LR_R <- (final_LR[2,"FALSE"]+final_LR[2,"TRUE"])/sum(final_LR) # Prevalance of the LR model
+
+accuracy_LR_R
+error_LR_R
+sensitivity_LR_R
+specificity_LR_R
+precision_LR_R
+prevalance_LR_R
+```
+Summary of Models Before and After
+```{r}
+library(formattable)
+library(data.table)
+
+# CART model summary - Before adding ratio variable
+CART_Before <- as.table(c(accuracy_cart,error_cart,sensitivity_cart,specificity_cart,precision_cart,prevalance_cart))
+names(CART_Before) <- c("Accuracy", "Error", "Sensitivity","Specificity","Precision","Prevalance")
+# CART model summary - After adding ratio variable
+CART_After <- as.table(c(accuracy_cart_R,error_cart_R,sensitivity_cart_R,specificity_cart_R,precision_cart_R,prevalance_cart_R))
+names(CART_After) <- c("Accuracy", "Error", "Sensitivity","Specificity","Precision","Prevalance")
+# CART model evaluation comparison
+CART_Before
+CART_After
+
+# RF model summary - Before adding ratio variable
+RF_Before <- as.table(c(accuracy_RF,error_RF,sensitivity_RF,specificity_RF,precision_RF,prevalance_RF))
+names(RF_Before) <- c("Accuracy", "Error", "Sensitivity","Specificity","Precision","Prevalance")
+# RF model summary - After adding ratio variable
+RF_After <- as.table(c(accuracy_RF_R,error_RF_R,sensitivity_RF_R,specificity_RF_R,precision_RF_R,prevalance_RF_R))
+names(RF_After) <- c("Accuracy", "Error", "Sensitivity","Specificity","Precision","Prevalance")
+# RF model evaluation comparison
+RF_Before
+RF_After
+
+# LR model summary - Before adding ratio variable
+LR_Before <- as.table(c(accuracy_LR,error_LR,sensitivity_LR,specificity_LR,precision_LR,prevalance_LR))
+names(LR_Before) <- c("Accuracy", "Error", "Sensitivity","Specificity","Precision","Prevalance")
+# LR model summary - After adding ratio variable
+LR_After <- as.table(c(accuracy_LR_R,error_LR_R,sensitivity_LR_R,specificity_LR_R,precision_LR_R,prevalance_LR_R))
+names(LR_After) <- c("Accuracy", "Error", "Sensitivity","Specificity","Precision","Prevalance")
+# LR model evaluation comparison
+LR_Before
+LR_After
+
+```
+
